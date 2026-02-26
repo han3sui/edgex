@@ -1,0 +1,154 @@
+mqtt:
+    - id: mqtt-1
+      name: Default MQTT
+      enable: true
+      broker: tcp://127.0.0.1:1883
+      client_id: industrial_gateway_001
+      topic: things/{client_id}/up
+      subscribe_topic: things/{client_id}/down/req
+      status_topic: things/{client_id}/{device_id}/status
+      lwt_topic: things/{client_id}/lwt
+      device_status_topic: ""
+      device_lifecycle_topic: things/{client_id}/lifecycle
+      online_payload: '{"status":"online","device_id":"%device_id%","timestamp":"%timestamp%"}'
+      offline_payload: '{"status":"offline","device_id":"%device_id%","timestamp":"%timestamp%"}'
+      lwt_payload: '{"status":"lwt","device_id":"%device_id%","timestamp":"%timestamp%"}'
+      ignore_offline_data: false
+      write_response_topic: things/{client_id}/down/resp
+      username: ""
+      password: ""
+      cache:
+        enable: false
+        max_count: 0
+        flush_interval: ""
+      devices:
+        "3":
+            enable: true
+            strategy: periodic
+            interval: 10s
+        Room_FC_2014_2228316:
+            enable: false
+            strategy: periodic
+            interval: 10s
+        Room_FC_2014_2228317:
+            enable: false
+            strategy: periodic
+            interval: 10s
+        Room_FC_2014_2228318:
+            enable: true
+            strategy: periodic
+            interval: 10s
+        Room_FC_2014_2228319:
+            enable: false
+            strategy: periodic
+            interval: 10s
+        Room_FC_2014_2228320:
+            enable: true
+            strategy: periodic
+            interval: 10s
+        bacnet-2228316:
+            enable: true
+            strategy: periodic
+            interval: 10s
+        bacnet-2228317:
+            enable: true
+            strategy: periodic
+            interval: 10s
+        opcua-dev-1:
+            enable: false
+            strategy: periodic
+            interval: 10s
+        opcua-device-1:
+            enable: false
+            strategy: periodic
+            interval: 0s
+        remote-slave-1:
+            enable: false
+            strategy: periodic
+            interval: 0s
+        rtu-device-1:
+            enable: false
+            strategy: periodic
+            interval: 0s
+        s7-pressure-sensor:
+            enable: true
+            strategy: change
+            interval: 0s
+        s7-pump-1:
+            enable: true
+            strategy: change
+            interval: 0s
+        s7-water-meter:
+            enable: true
+            strategy: change
+            interval: 0s
+        slave-1:
+            enable: true
+            strategy: periodic
+            interval: 10s
+        slave-2:
+            enable: true
+            strategy: periodic
+            interval: 30s
+http: []
+opcua:
+    - id: opcua-1
+      name: Default OPC UA
+      enable: false
+      port: 5050
+      endpoint: /test
+      security_policy: Auto
+      security_mode: ""
+      trusted_cert_path: ""
+      auth_methods:
+        - Anonymous
+        - UserName
+      users: {}
+      cert_file: ""
+      key_file: ""
+      devices:
+        "3": true
+        Room_FC_2014_2228316: true
+        Room_FC_2014_2228317: true
+        Room_FC_2014_2228318: false
+        Room_FC_2014_2228319: false
+        Room_FC_2014_2228320: false
+        Room_FC_2014_2228322: false
+        bacnet-2228316: false
+        bacnet-2228317: false
+        bacnet-2228318: false
+        bacnet-2228319: false
+        bacnet-2228320: false
+        bacnet-2228321: false
+        opcua-dev-1: true
+        rtu-device-1: false
+        s7-pressure-sensor: false
+        s7-pump-1: false
+        s7-water-meter: false
+        slave-1: true
+        slave-2: true
+        slave-3: false
+        slave-4: false
+sparkplug_b:
+    - id: sparkplug-1
+      name: Default Sparkplug B
+      enable: false
+      client_id: ""
+      group_id: ""
+      node_id: ""
+      enable_alias: false
+      group_path: false
+      offline_cache: false
+      cache_mem_size: 0
+      cache_disk_size: 0
+      cache_resend_int: 0
+      broker: ""
+      port: 0
+      username: ""
+      password: ""
+      ssl: false
+      ca_cert: ""
+      client_cert: ""
+      client_key: ""
+      key_password: ""
+      devices: {}
