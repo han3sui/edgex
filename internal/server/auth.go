@@ -360,7 +360,7 @@ func (s *Server) handleLogin(c *fiber.Ctx) error {
 		Email: "",
 		RegisteredClaims: jwt.RegisteredClaims{
 			NotBefore: jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // 24 hours
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * 7 * time.Hour)), // 24*7 hours
 			Issuer:    "IndustrialEdgeGateway",
 		},
 	}

@@ -1,203 +1,279 @@
- BACnet 驱动采集测试与验收标准清单，覆盖：**设备扫描、对象发现、点位采集、写入控制、稳定性、兼容性**等核心能力。
+当前要实现的架构特点（多设备隔离、设备级质量裁决、全部设备必须 Good）进行强化，并统一使用：
+基于配置修改 D:\code\edgex\conf\channels.yaml
+使用最新配置文件来实现设备读取bacnet点位
+比如 D:\code\edgex\conf\devices\bacnet-ip\bacnet-2228316.yaml
+严格按照配置文件中的点位进行读取 配置文件不可修改的原则进行代码调整
+特别注意：
+* **DeviceID**：系统内唯一标识（Edge/平台侧）
+* **Instance ID**：BACnet 网络唯一标识
+* **ObjectID**：对象标识（Type + Instance）
+* **Property**：对象属性标识
+
+当前设备清单中 Room_FC_2014_19 能正常读取点位 其他设备均点位异常bad（验收范围）：
+
+* bacnet-18 → Instance ID 2228318
+* bacnet-16 → Instance ID 2228316
+* bacnet-17 → Instance ID 2228317
+* Room_FC_2014_19 → Instance ID 2228319
+
+> ⚠ 验收前提：所有设备物理运行正常，网络正常
+> ⚠ 最终要求：**全部设备质量等级必须为 Good（≥85分）**
+
+如果使用token 可以利用下面的例子 (当前token为有效token)
+curl ^"http://127.0.0.1:8082/api/channels/jxy3kvpohmetzct0^" ^
+  -H ^"Accept: application/json, text/plain, */*^" ^
+  -H ^"Accept-Language: zh,zh-CN;q=0.9,en;q=0.8^" ^
+  -H ^"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYWRtaW4iLCJlbWFpbCI6IiIsImlzcyI6IkluZHVzdHJpYWxFZGdlR2F0ZXdheSIsImV4cCI6MTc3Mjg2NDA3NywibmJmIjoxNzcyMjU5Mjc3fQ.m0k3SQ-B9n7sfSSYnzXjT0X0Vmq_cxjqNM1jw0w03vg^" ^
+  -H ^"Connection: keep-alive^" ^
+  -H ^"DNT: 1^" ^
+  -H ^"Referer: http://127.0.0.1:8082/^" ^
+  -H ^"Sec-Fetch-Dest: empty^" ^
+  -H ^"Sec-Fetch-Mode: cors^" ^
+  -H ^"Sec-Fetch-Site: same-origin^" ^
+  -H ^"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36^" ^
+  -H ^"sec-ch-ua: ^\^"Not:A-Brand^\^";v=^\^"99^\^", ^\^"Google Chrome^\^";v=^\^"145^\^", ^\^"Chromium^\^";v=^\^"145^\^"^" ^
+  -H ^"sec-ch-ua-mobile: ?0^" ^
+  -H ^"sec-ch-ua-platform: ^\^"Windows^\^"^" ^
+  -H ^"sec-gpc: 1^" ^
+  -H ^"token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYWRtaW4iLCJlbWFpbCI6IiIsImlzcyI6IkluZHVzdHJpYWxFZGdlR2F0ZXdheSIsImV4cCI6MTc3Mjg2NDA3NywibmJmIjoxNzcyMjU5Mjc3fQ.m0k3SQ-B9n7sfSSYnzXjT0X0Vmq_cxjqNM1jw0w03vg^"
+  
+---
+
+# 《BACnet 驱动采集测试与验收标准清单》
 
 ---
 
-## 一、设备发现（Device Discovery）必须达标
+# 一、点位读取（ReadProperty）验收标准
 
-### 1️⃣ Who-Is / I-Am 发现能力
+## 3.1 基础属性支持范围
 
-**达标要求：**
+### 必须支持对象
 
-* 能广播 Who-Is
-* 能正确解析 I-Am 报文
-* 提取并存储以下字段：
-
-  * `DeviceInstance`
-  * `VendorID`
-  * `VendorName`
-  * `ModelName`
-  * `MaxAPDU`
-  * `SegmentationSupported`
-
-**验收标准：**
-
-* 同一网段内 100% 设备可被发现
-* 重复广播不产生重复设备实例
-* 断网重连后自动重新发现设备
+| 类型     | 必须属性                                    |
+| ------ | --------------------------------------- |
+| AI     | Present_Value, Units, Status_Flags      |
+| AO     | Present_Value, Units, Status_Flags      |
+| AV     | Present_Value, Units                    |
+| BI     | Present_Value, Status_Flags             |
+| BO     | Present_Value, Polarity                 |
+| Device | Object_Name, Vendor_Name, System_Status |
 
 ---
 
-## 二、对象列表发现（Object Discovery）必须达标
+## 3.2 读取性能要求
 
-### 2️⃣ objectList 解析能力
-
-**达标要求：**
-
-* 能通过 `ReadProperty(Device, objectList)` 获取完整对象列表
-* 支持分段传输（segmented response）
-* 能识别对象类型与实例号（如 `analogInput, 1`）
-
-**验收标准：**
-
-* 所有设备对象完整获取（无丢失、无重复）
-* 分段情况下不丢对象、不乱序
+* 成功率 ≥ 99%
+* 单次读取 RTT ≤ 500ms（局域网）
+* 连续采集周期支持 5~30 秒
+* 非法点位读取不得影响其他点位
 
 ---
 
-## 三、对象属性读取（Point Read）必须达标
+## 3.3 多设备隔离要求（关键）
 
-### 3️⃣ 基础属性读取
-
-**至少支持以下属性：**
-
-| 对象类型     | 必须支持属性                                              |
-| -------- | --------------------------------------------------- |
-| AI/AO/AV | Present_Value, Units, Status_Flags                  |
-| BI/BO/BV | Present_Value, Polarity, Status_Flags               |
-| Device   | Object_Name, Vendor_Name, Model_Name, System_Status |
-
-**验收标准：**
-
-* 所有点位 Present_Value 读取成功率 ≥ 99%
-* 单次采集延迟 ≤ 500ms（局域网场景）
-* 非法点位读取不影响整体采集线程
+* 单设备异常不影响其他设备轮询
+* 设备级调度线程独立
+* 超时仅影响当前设备
 
 ---
 
-## 四、点位写入控制（WriteProperty）必须达标
+# 五、COV 订阅机制验收标准
 
-### 4️⃣ 写入能力
+## 5.1 功能要求
 
-**达标要求：**
-
-* 支持 `WriteProperty` 写入：
-
-  * Analog Value
-  * Binary Output
-* 支持优先级写入（Priority 1~16）
-* 支持释放写入（写 NULL）
-
-**验收标准：**
-
-* 写入后读取值一致
-* 优先级机制正确生效
-* 无权限写入时返回明确错误
-
----
-
-## 五、COV 订阅（可选但强烈推荐）
-
-### 5️⃣ Change of Value 订阅
-
-**达标要求：**
-
-* 支持 `SubscribeCOV`
-* 支持订阅失败回退为轮询模式
+* 支持 SubscribeCOV
 * 支持订阅过期自动重订
-
-**验收标准：**
-
-* 变化事件实时上报，无轮询延迟
-* 设备重启后可自动恢复订阅
+* 支持设备重启后自动恢复
+* 订阅失败自动回退轮询
+* 轮询周期默认 10s 可配置
 
 ---
 
-## 六、异常处理与健壮性必须达标
+## 5.2 验收判定
 
-### 6️⃣ 错误与异常场景处理
-
-必须覆盖以下场景：
-
-* 设备断电 / 掉线
-* 网络抖动 / 超时
-* 响应报文格式错误
-* 单点读取异常
-
-**验收标准：**
-
-* 单设备异常不影响其他设备采集
-* 超时可自动重试，重试次数可配置
-* 错误有完整日志（含 DeviceID、ObjectID、Property、错误码）
+* 数据变化实时上报
+* 不出现重复订阅
+* 网络恢复后自动重建订阅
+* COV 与轮询互不干扰
 
 ---
 
-## 七、性能与稳定性必须达标
+# 六、异常与健壮性验收标准（必须达标）
 
-### 7️⃣ 性能指标
+## 6.1 必测异常场景
 
-**推荐基线指标（可根据项目规模调整）：**
-
-* 单进程支持 ≥ 256 设备
-* 每设备 ≥ 500 点位
-* 点位采集周期：5~30 秒可配置
-* CPU 占用稳定，无内存泄漏（72小时压测）
-
----
-
-## 八、配置与自动化能力必须达标
-
-### 8️⃣ 自动注册与建模
-
-**达标要求：**
-
-* 新发现设备自动注册
-* 自动生成点位模型（AutoGeneratePoints）
-* 支持模型持久化（JSON / DB）
-
-**验收标准：**
-
-* 无需人工配置即可完成基础采集
-* 重启后模型自动恢复
+* 设备断电
+* 设备重启
+* 网络抖动
+* UDP 丢包
+* 单对象错误
+* Abort / Reject 报文
 
 ---
 
-## 九、测试用例结构建议
+## 6.2 判定标准
 
-```text
-1. 设备发现测试
-   - Who-Is / I-Am 发现
-   - 重复发现处理
-   - 断网重连恢复
+* 单设备离线不影响其他设备
+* 设备进入 DEGRADED 状态后质量下降
+* 恢复后自动回到 ONLINE
+* 连续失败达到阈值自动冻结
+* 恢复成功后自动解冻
 
-2. 对象发现测试
-   - objectList 读取
-   - 分段传输支持
-   - 大对象列表完整性
+---
 
-3. 点位读取测试
-   - AI/BI/AV/BV 读取
-   - 非法点位容错
-   - 高并发读取稳定性
+# 七、质量等级验收标准（必须全部 Good）
 
-4. 点位写入测试
-   - 普通写入
-   - 优先级写入
-   - 写入回读一致性
+## 7.1 设备级质量评分规则
 
-5. COV 订阅测试（如支持）
-   - 正常订阅
-   - 断线重订
-   - 回退轮询机制
+| 指标          | 要求      |
+| ----------- | ------- |
+| SuccessRate | ≥ 98%   |
+| TimeoutRate | ≤ 1%    |
+| AvgRTT      | ≤ 200ms |
+| 连续失败        | ≤ 3 次   |
+| Flap        | 0       |
 
-6. 稳定性测试
-   - 长时间运行（72h）
-   - 网络抖动
-   - 设备异常恢复
+最终等级必须：
 
-7. 性能压测
-   - 多设备、多点位、高频采集
-   - CPU / 内存 / 延迟统计
+```
+QualityScore ≥ 85
+QualityLevel = Good
 ```
 
 ---
 
-## 十、需要“项目验收级”表格模板
+## 7.2 通道级要求
 
-生成一份：
+* 所有设备 Quality = Good
+* 无设备 Offline
+* 无设备 Degraded
+* WorstDeviceQuality ≥ 85
 
-* ✅ BACnet 驱动功能验收表（Markdown）
-* ✅ 测试用例文档模板
-* ✅ Go 驱动自测 checklist
-* ✅ 自动化测试用例结构（基于现在的 BACnet 框架）
+---
 
-。
+# 八、性能与压力测试验收标准
+
+## 8.1 基准指标
+
+* 支持 ≥ 256 设备
+* 每设备 ≥ 500 点
+* 采集周期 10 秒
+* 连续运行 72 小时
+
+---
+
+## 8.2 判定标准
+
+* CPU 无异常飙升
+* 内存无泄漏
+* Goroutine 不增长
+* 无死锁
+* 平均延迟稳定
+
+---
+
+# 九、自动建模与持久化验收
+
+## 9.1 必须支持
+
+* 自动注册设备
+* 自动生成点位模型
+* 模型持久化 JSON/DB
+* 重启自动恢复
+
+---
+
+# 十、完整验收表（Markdown 模板）
+
+```markdown
+# BACnet 驱动功能验收表
+
+## 一、设备发现
+
+| 项目 | 标准 | 结果 | 是否通过 |
+|------|------|------|----------|
+| Who-Is 广播 | 正常 |      | ☐ |
+| I-Am 解析 | 100%成功 |      | ☐ |
+| 自动注册 | 正常 |      | ☐ |
+
+## 二、对象发现
+
+| 项目 | 标准 | 结果 | 是否通过 |
+|------|------|------|----------|
+| objectList 完整性 | 无丢失 |      | ☐ |
+| 分段支持 | 正常 |      | ☐ |
+
+## 三、点位读取
+
+| 设备 | SuccessRate | AvgRTT | Quality | 是否Good |
+|------|------------|--------|---------|----------|
+| bacnet-16 |      |        |         | ☐ |
+| bacnet-17 |      |        |         | ☐ |
+| bacnet-18 |      |        |         | ☐ |
+| Room_FC_2014_19 |      |        |         | ☐ |
+
+## 四、写入控制
+
+| 测试项 | 结果 | 是否通过 |
+|--------|------|----------|
+| AV写入 |      | ☐ |
+| BO写入 |      | ☐ |
+| 优先级释放 |      | ☐ |
+
+## 五、稳定性测试
+
+| 项目 | 标准 | 是否通过 |
+|------|------|----------|
+| 72小时运行 | 无异常 | ☐ |
+| 断网恢复 | 自动恢复 | ☐ |
+| 单设备异常隔离 | 正常 | ☐ |
+```
+
+---
+
+# 十一、Go 驱动自测 Checklist
+
+* [ ] Who-Is 解析正确
+* [ ] objectList 分段正确
+* [ ] ReadProperty 并发安全
+* [ ] WriteProperty 优先级支持
+* [ ] COV 自动重订
+* [ ] 设备级 metrics 正确更新
+* [ ] 状态机融合质量算法
+* [ ] 单设备异常不影响全局
+* [ ] 自动建模恢复
+
+---
+
+# 十二、自动化测试结构建议
+
+```
+/test
+   bacnet_discovery_test.go
+   bacnet_objectlist_test.go
+   bacnet_read_test.go
+   bacnet_write_test.go
+   bacnet_cov_test.go
+   bacnet_stability_test.go
+   bacnet_performance_test.go
+```
+
+每个测试应包含：
+
+* 正常场景
+* 异常场景
+* 恢复场景
+* 压测场景
+
+---
+
+# 最终验收判定条件（签字级）
+
+✔ 设备发现率 100%
+✔ 对象完整率 100%
+✔ 点位成功率 ≥ 99%
+✔ 全部设备 Quality ≥ Good
+✔ 单设备异常不影响其他设备
+✔ 72 小时稳定运行无异常
+✔ 自动恢复能力验证通过
+

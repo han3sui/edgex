@@ -462,6 +462,10 @@ func (cm *ChannelManager) GetChannelDevices(channelID string) []model.Device {
 					State:         int(node.Runtime.State),
 				}
 			}
+			if mc := model.GetGlobalMetricsCollector(); mc != nil {
+				metrics := mc.GetDeviceMetrics(dev.ID)
+				devices[i].QualityScore = metrics.HealthScore
+			}
 		}
 		return devices
 	}
@@ -487,6 +491,10 @@ func (cm *ChannelManager) GetDevice(channelID, deviceID string) *model.Device {
 						NextRetryTime: node.Runtime.NextRetryTime,
 						State:         int(node.Runtime.State),
 					}
+				}
+				if mc := model.GetGlobalMetricsCollector(); mc != nil {
+					metrics := mc.GetDeviceMetrics(d.ID)
+					d.QualityScore = metrics.HealthScore
 				}
 				return &d
 			}
@@ -889,6 +897,26 @@ func (cm *ChannelManager) collectDevice(dev *model.Device, d drv.Driver, ch *mod
 	// 如果有点位但没有结果，视为失败
 	if len(dev.Points) > 0 && len(results) == 0 {
 		failCount = len(dev.Points) // 假设所有点位都失败
+	}
+
+	// Update Device Metrics
+	if mc := model.GetGlobalMetricsCollector(); mc != nil {
+		mc.UpdateDeviceMetrics(dev.ID, func(m *model.DeviceMetrics) {
+			total := successCount + failCount
+			if total > 0 {
+				m.PointSuccessRate = float64(successCount) / float64(total)
+			} else {
+				m.PointSuccessRate = 0
+			}
+			m.AbnormalPoints = failCount
+			if failCount == len(dev.Points) && len(dev.Points) > 0 {
+				m.ConsecutiveFailures++
+			} else {
+				m.ConsecutiveFailures = 0
+			}
+			m.LastCollectTime = now
+			m.State = int(node.Runtime.State)
+		})
 	}
 
 	collectCtx := &CollectContext{

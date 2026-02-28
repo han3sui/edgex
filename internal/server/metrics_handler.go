@@ -32,7 +32,7 @@ func (s *Server) getChannelMetrics(c *fiber.Ctx) error {
 	metrics.LocalAddr = ""
 	metrics.RemoteAddr = ""
 
-	// 从 driver 获取连接信息
+	// 从 driver 获取连接信息和详细指标
 	driver := s.cm.GetDriver(channelID)
 	if driver != nil {
 		connSec, reconCount, localAddr, remoteAddr, lastDisc := driver.GetConnectionMetrics()
@@ -41,6 +41,29 @@ func (s *Server) getChannelMetrics(c *fiber.Ctx) error {
 		metrics.LocalAddr = localAddr
 		metrics.RemoteAddr = remoteAddr
 		metrics.LastDisconnectTime = lastDisc
+
+		// 检查是否是 BACnet 驱动，获取详细指标
+		if bacnetDriver, ok := driver.(interface{ GetMetrics() model.ChannelMetrics }); ok {
+			bacnetMetrics := bacnetDriver.GetMetrics()
+			// 覆盖基础指标
+			metrics.QualityScore = bacnetMetrics.QualityScore
+			metrics.Protocol = bacnetMetrics.Protocol
+			metrics.SuccessRate = bacnetMetrics.SuccessRate
+			metrics.TimeoutCount = bacnetMetrics.TimeoutCount
+			metrics.CrcError = bacnetMetrics.CrcError
+			metrics.CrcErrorRate = bacnetMetrics.CrcErrorRate
+			metrics.RetryRate = bacnetMetrics.RetryRate
+			metrics.ExceptionCode = bacnetMetrics.ExceptionCode
+			metrics.AvgRtt = bacnetMetrics.AvgRtt
+			metrics.MaxRtt = bacnetMetrics.MaxRtt
+			metrics.MinRtt = bacnetMetrics.MinRtt
+			metrics.TotalRequests = bacnetMetrics.TotalRequests
+			metrics.SuccessCount = bacnetMetrics.SuccessCount
+			metrics.FailureCount = bacnetMetrics.FailureCount
+			metrics.PacketLoss = bacnetMetrics.PacketLoss
+			metrics.Trend = bacnetMetrics.Trend
+			metrics.RecentErrors = bacnetMetrics.RecentErrors
+		}
 	}
 
 	// 更新时间戳

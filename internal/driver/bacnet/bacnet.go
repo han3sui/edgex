@@ -356,20 +356,9 @@ func (d *BACnetDriver) ReadPoints(ctx context.Context, points []model.Point) (ma
 	}
 	results, err := devCtx.Scheduler.Read(ctx, points)
 	if err != nil {
-		// Auto-Correction: If read failed on non-standard port, try standard BACnet port (47808)
-		// This handles simulators that respond from ephemeral ports but listen on 47808.
-		currentPort := devCtx.Config.Port
-		if len(devCtx.Device.Addr.Mac) >= 6 {
-			currentPort = int(devCtx.Device.Addr.Mac[4])<<8 | int(devCtx.Device.Addr.Mac[5])
-		}
-		if currentPort != 47808 {
-			zap.L().Warn("ReadPoints failed on port, detected non-standard port", zap.Int("port", currentPort), zap.Int("device_id", targetID))
-		}
-
-		if err != nil {
-			// Trigger recovery if read still fails
-			d.checkRecovery(targetID)
-		}
+		zap.L().Warn("ReadPoints failed", zap.Int("device_id", targetID), zap.Error(err))
+		// Trigger recovery if read fails
+		d.checkRecovery(targetID)
 	}
 	return results, err
 }

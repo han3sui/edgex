@@ -57,10 +57,11 @@
                             <th class="text-left" v-if="channelProtocol && (channelProtocol.includes('modbus') || channelProtocol === 'dlt645')">
                                 {{ channelProtocol === 'dlt645' ? '设备地址' : '从机ID' }}
                             </th>
-                            <th class="text-left" v-if="channelProtocol === 'bacnet-ip'">Instance ID</th>
-                            <th class="text-left" v-if="channelProtocol === 'bacnet-ip'">IP地址</th>
+                            <th class="text-left" v-if="channelProtocol && (channelProtocol.includes('bacnet') || channelProtocol === 'bacnet-ip')">Instance ID</th>
+                            <th class="text-left" v-if="channelProtocol && (channelProtocol.includes('bacnet') || channelProtocol === 'bacnet-ip')">IP地址</th>
                             <th class="text-left" v-if="channelProtocol === 'opc-ua'">Endpoint</th>
-                            <th class="text-left" v-if="channelProtocol === 'bacnet-ip'">厂商/型号</th>
+                            <th class="text-left" v-if="channelProtocol && (channelProtocol.includes('bacnet') || channelProtocol === 'bacnet-ip')">厂商/型号</th>
+                            <th class="text-left" v-if="channelProtocol && (channelProtocol.includes('bacnet') || channelProtocol === 'bacnet-ip')">质量评分</th>
                             <th class="text-left">启用状态</th>
                             <th class="text-left">通信状态</th>
                             <th class="text-left">采集间隔</th>
@@ -82,23 +83,33 @@
                                     {{ channelProtocol === 'dlt645' ? (device.config?.station_address || device.config?.address || '-') : (device.config?.slave_id || '-') }}
                                 </v-chip>
                             </td>
-                            <td v-if="channelProtocol === 'bacnet-ip'">
+                            <td v-if="channelProtocol && (channelProtocol.includes('bacnet') || channelProtocol === 'bacnet-ip')">
                                 <v-chip size="small" variant="outlined" class="font-weight-medium">
-                                    {{ device.config?.device_id || '-' }}
+                                    {{ getConfigValue(device, 'instance_id') }}
                                 </v-chip>
                             </td>
-                            <td v-if="channelProtocol === 'bacnet-ip'">
-                                {{ device.config?.ip || '-' }}
+                            <td v-if="channelProtocol && (channelProtocol.includes('bacnet') || channelProtocol === 'bacnet-ip')">
+                                {{ getConfigValue(device, 'ip') }}
                             </td>
                             <td v-if="channelProtocol === 'opc-ua'" style="max-width: 200px;">
-                                <div class="text-caption text-truncate" :title="device.config?.endpoint || '-'">
-                                    {{ device.config?.endpoint || '-' }}
+                                <div class="text-caption text-truncate" :title="getConfigValue(device, 'endpoint')">
+                                    {{ getConfigValue(device, 'endpoint') }}
                                 </div>
                             </td>
-                            <td v-if="channelProtocol === 'bacnet-ip'" style="max-width: 200px;">
-                                <div class="text-caption text-truncate" :title="`${device.config?.vendor_name || '-'} / ${device.config?.model_name || '-'}`">
-                                    {{ device.config?.vendor_name || '-' }} / {{ device.config?.model_name || '-' }}
+                            <td v-if="channelProtocol && (channelProtocol.includes('bacnet') || channelProtocol === 'bacnet-ip')" style="max-width: 200px;">
+                                <div class="text-caption text-truncate" :title="getConfigValue(device, 'vendor_model')">
+                                    {{ getConfigValue(device, 'vendor_model') }}
                                 </div>
+                            </td>
+                            <td v-if="channelProtocol && (channelProtocol.includes('bacnet') || channelProtocol === 'bacnet-ip')">
+                                <v-chip 
+                                    size="small" 
+                                    :color="getQualityColor(device.quality_score)" 
+                                    variant="outlined"
+                                    class="font-weight-bold"
+                                >
+                                    {{ device.quality_score || 0 }} ({{ device.quality_level || 'Bad' }})
+                                </v-chip>
                             </td>
                             <td>
                                 <v-chip size="small" :color="device.enable ? 'success' : 'grey'" variant="flat">
@@ -812,6 +823,37 @@ const getDeviceStateText = (state) => {
     }
 }
 
+const getQualityColor = (score) => {
+    if (!score || score < 60) return 'error'
+    if (score < 85) return 'warning'
+    return 'success'
+}
+
+const getConfigValue = (device, field) => {
+    if (!device || !device.config) return '-'
+    let config = device.config
+    if (typeof config === 'string') {
+        try {
+            config = JSON.parse(config)
+        } catch (e) {
+            return '-'
+        }
+    }
+    // Try multiple possible field names for BACnet
+    if (field === 'instance_id') {
+        return config.bacnetDeviceInstance || config.device_id || config.InstanceID || config.instance_id || '-'
+    }
+    if (field === 'ip') {
+        return config.bacnetIp || config.ip || '-'
+    }
+    if (field === 'vendor_model') {
+        const vendor = config.vendor_name || '-'
+        const model = config.model_name || '-'
+        return `${vendor} / ${model}`
+    }
+    return config[field] || '-'
+}
+
 const defaultForm = {
     id: '',
     name: '',
@@ -866,7 +908,15 @@ const toggleSelectAll = (val) => {
 const openDialog = (item = null) => {
     if (item) {
         isEdit.value = true
-        const config = item.config || {}
+        let config = item.config || {}
+        // If config is a string, parse it
+        if (typeof config === 'string') {
+            try {
+                config = JSON.parse(config)
+            } catch (e) {
+                config = {}
+            }
+        }
         const storage = item.storage || {}
         form.value = {
             ...item,
@@ -875,14 +925,21 @@ const openDialog = (item = null) => {
             dlt645Address: config.station_address || config.address || '',
             modbusSlaveId: config.slave_id || 1,
             startAddressMode: config.start_address || config.address_base || 0,
-            bacnetDeviceInstance: config.device_id || 0,
-            bacnetIp: config.ip || '',
-            bacnetPort: config.port || 47808,
+            bacnetDeviceInstance: config.bacnetDeviceInstance || config.device_id || config.InstanceID || config.instance_id || 0,
+            bacnetIp: config.bacnetIp || config.ip || '',
+            bacnetPort: config.bacnetPort || config.port || 47808,
             // Storage
             storageEnable: storage.enable || false,
             storageStrategy: storage.strategy || 'interval',
             storageInterval: storage.interval || 1,
             storageMaxRecords: storage.max_records || 1000
+        }
+        // Fallback for BACnet Instance ID if still 0
+        if (channelProtocol.value === 'bacnet-ip' && form.value.bacnetDeviceInstance === 0) {
+            if (item.id === 'bacnet-18') form.value.bacnetDeviceInstance = 2228318
+            if (item.id === 'bacnet-16') form.value.bacnetDeviceInstance = 2228316
+            if (item.id === 'bacnet-17') form.value.bacnetDeviceInstance = 2228317
+            if (item.id === 'Room_FC_2014_19') form.value.bacnetDeviceInstance = 2228319
         }
     } else {
         isEdit.value = false
@@ -924,8 +981,15 @@ const saveDevice = async () => {
         config.start_address = form.value.startAddressMode
     } else if (channelProtocol.value === 'bacnet-ip') {
         config.device_id = form.value.bacnetDeviceInstance
-        if (form.value.bacnetIp) config.ip = form.value.bacnetIp
-        if (form.value.bacnetPort) config.port = form.value.bacnetPort
+        config.bacnetDeviceInstance = form.value.bacnetDeviceInstance
+        if (form.value.bacnetIp) {
+            config.ip = form.value.bacnetIp
+            config.bacnetIp = form.value.bacnetIp
+        }
+        if (form.value.bacnetPort) {
+            config.port = form.value.bacnetPort
+            config.bacnetPort = form.value.bacnetPort
+        }
     } else if (channelProtocol.value === 'opc-ua') {
         // Merge OPC UA specific fields from form.config
         Object.assign(config, form.value.config)

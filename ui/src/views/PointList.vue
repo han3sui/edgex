@@ -90,27 +90,42 @@
             <v-progress-linear v-if="loading" indeterminate color="primary"></v-progress-linear>
 
             <v-card-text class="pa-0">
-                <!-- Channel Connection Metrics -->
-                <div v-if="metrics.remoteAddr || metrics.lastDisconnectTime" class="px-6 py-2 bg-grey-lighten-4 border-b d-flex align-center text-caption text-grey-darken-2">
-                    <template v-if="metrics.connectionSeconds > 0">
-                        <v-icon size="small" icon="mdi-lan-connect" class="mr-2" color="success"></v-icon>
-                        <span class="mr-4"><strong>连接状态:</strong> <v-chip size="x-small" color="success" variant="flat" class="ml-1">已连接</v-chip></span>
-                        <span class="mr-4"><strong>本地端口:</strong> {{ metrics.localAddr.split(':').pop() }}</span>
-                        <span class="mr-4"><strong>远程地址:</strong> {{ metrics.remoteAddr }}</span>
-                        <span class="mr-4"><strong>持续时长:</strong> {{ formatDuration(metrics.connectionSeconds) }}</span>
+                <!-- Device Connection Metrics -->
+                <div v-if="deviceInfo" class="px-6 py-2 bg-grey-lighten-4 border-b d-flex align-center text-caption text-grey-darken-2">
+                    <template v-if="deviceInfo.state === 0 || deviceInfo.state === 1">
+                        <v-icon size="small" :icon="deviceInfo.state === 0 ? 'mdi-lan-connect' : 'mdi-lan-pending'" class="mr-2" :color="deviceInfo.state === 0 ? 'success' : 'warning'"></v-icon>
+                        <span class="mr-4">
+                            <strong>连接状态:</strong> 
+                            <v-chip size="x-small" :color="deviceInfo.state === 0 ? 'success' : 'warning'" variant="flat" class="ml-1">
+                                {{ deviceInfo.state === 0 ? '已连接' : '不稳定' }}
+                            </v-chip>
+                        </span>
+                        <span class="mr-4"><strong>协议:</strong> {{ getProtocolTransport(channelProtocol) }}</span>
+                        <span v-if="metrics.localAddr" class="mr-4"><strong>本地端口:</strong> {{ metrics.localAddr.split(':').pop() }}</span>
+                        <span v-if="metrics.remoteAddr" class="mr-4"><strong>远程地址:</strong> {{ metrics.remoteAddr }}</span>
+                        <!-- 使用 runtime.success_count 和 last_fail_time 计算更准确的连接信息 -->
+                        <span v-if="deviceInfo.runtime" class="mr-4" title="连续成功通信的次数">
+                            <strong>连续通信:</strong> 
+                            <v-chip size="x-small" color="success" variant="tonal" class="ml-1 font-weight-bold">
+                                {{ deviceInfo.runtime.success_count }} 次
+                            </v-chip>
+                        </span>
+                        <span v-if="deviceInfo.runtime?.last_fail_time && new Date(deviceInfo.runtime.last_fail_time).getFullYear() > 1" class="mr-4">
+                            <strong>最近失败:</strong> 
+                            <span class="text-grey-darken-1 ml-1">{{ formatDate(deviceInfo.runtime.last_fail_time) }}</span>
+                        </span>
                     </template>
                     <template v-else>
                         <v-icon size="small" icon="mdi-lan-disconnect" class="mr-2" color="error"></v-icon>
                         <span class="mr-4"><strong>连接状态:</strong> <v-chip size="x-small" color="error" variant="flat" class="ml-1">已断开</v-chip></span>
-                        <span v-if="metrics.lastDisconnectTime" class="mr-4"><strong>断开时间:</strong> {{ formatDate(metrics.lastDisconnectTime) }}</span>
-                        <span v-if="metrics.lastDisconnectTime" class="mr-4"><strong>离线时长:</strong> {{ formatDuration(Math.floor((Date.now() - new Date(metrics.lastDisconnectTime).getTime()) / 1000)) }}</span>
+                        <span class="mr-4"><strong>协议:</strong> {{ getProtocolTransport(channelProtocol) }}</span>
+                        <span v-if="deviceInfo.runtime?.last_fail_time && new Date(deviceInfo.runtime.last_fail_time).getFullYear() > 1" class="mr-4"><strong>断开时间:</strong> {{ formatDate(deviceInfo.runtime.last_fail_time) }}</span>
+                        <span v-if="deviceInfo.runtime?.last_fail_time && new Date(deviceInfo.runtime.last_fail_time).getFullYear() > 1" class="mr-4"><strong>离线时长:</strong> {{ formatDuration(Math.floor((Date.now() - new Date(deviceInfo.runtime.last_fail_time).getTime()) / 1000)) }}</span>
                     </template>
                     <span v-if="metrics.reconnectCount > 0" class="mr-4"><strong>重连次数:</strong> {{ metrics.reconnectCount }}</span>
+                    <span v-if="deviceInfo.quality_score !== undefined" class="mr-4"><strong>质量评分:</strong> {{ deviceInfo.quality_score }}</span>
                 </div>
 
-                <div class="pa-4 pb-0">
-                    <PointFormatHelpPanel :lang="currentLang" />
-                </div>
                 <v-table hover>
                     <thead>
                         <tr>
@@ -1364,6 +1379,27 @@
                                 autofocus
                             ></v-text-field>
                         </template>
+                        
+                        <!-- BACnet Priority Selection -->
+                        <v-select
+                            v-if="channelProtocol === 'bacnet-ip'"
+                            v-model.number="writeDialog.priority"
+                            :items="[
+                                { title: '1 (最高)', value: 1 },
+                                { title: '8 (手动)', value: 8 },
+                                { title: '16 (最低)', value: 16 },
+                                { title: 'NULL (释放)', value: null }
+                            ]"
+                            item-title="title"
+                            item-value="value"
+                            label="BACnet 写入优先级 (1-16)"
+                            variant="outlined"
+                            density="compact"
+                            prepend-inner-icon="mdi-order-numeric-ascending"
+                            class="mt-2"
+                            hint="优先级 1-16, NULL 表示释放该点位"
+                            persistent-hint
+                        ></v-select>
                     </v-form>
                 </v-card-text>
                 <v-card-actions class="pa-4 pt-0">
@@ -1480,7 +1516,6 @@ import { globalState, showMessage } from '../composables/useGlobalState'
 import request from '@/utils/request'
 import basePointTemplates from '@/utils/pointTemplates.json'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
-import PointFormatHelpPanel from '@/components/PointFormatHelpPanel.vue'
 import {
     baseWordOrderOptions,
     baseParseTypeOptions,
@@ -1591,6 +1626,7 @@ const writeDialog = reactive({
     valueNum: 0,
     valueStr: '',
     valueBool: false,
+    priority: 16, // Default priority
     loading: false
 })
 
@@ -2965,18 +3001,31 @@ const scanPoints = async () => {
         }
         
         // Handle device_id being 0 or string "0" for BACnet
+        let targetDeviceId = null
         if (channelProtocol.value === 'bacnet-ip') {
-            const configDeviceId = deviceInfo.value.config.device_id
-            if (configDeviceId === undefined || configDeviceId === null || configDeviceId === '') {
-                showMessage('无法获取设备ID (config.device_id)', 'error')
+            // 优先使用 instance_id，其次 device_id
+            const cfg = deviceInfo.value.config || {}
+            targetDeviceId = cfg.instance_id
+            if (targetDeviceId === undefined || targetDeviceId === null || targetDeviceId === '') {
+                targetDeviceId = cfg.device_id
+            }
+
+            if (targetDeviceId === undefined || targetDeviceId === null || targetDeviceId === '') {
+                showMessage('无法获取设备实例ID (config.instance_id 或 device_id)', 'error')
                 return
             }
         }
         
         // Call device-specific scan endpoint
-        const res = await request.post(`/api/channels/${channelId.value}/devices/${deviceId.value}/scan`, {
+        const payload = {
             mode: scanDialog.mode
-        }, { timeout: 60000 })
+        }
+        // 如果提取到了 device_id (BACnet Instance ID)，则显式传递给后端
+        if (targetDeviceId !== null) {
+            payload.device_id = parseInt(targetDeviceId)
+        }
+
+        const res = await request.post(`/api/channels/${channelId.value}/devices/${deviceId.value}/scan`, payload, { timeout: 60000 })
         
         if (Array.isArray(res)) {
             if (channelProtocol.value === 'opc-ua') {
@@ -3280,11 +3329,21 @@ const submitWrite = async () => {
     writeDialog.loading = true
     try {
         const payloadValue = normalizeWriteValue()
+        
+        // Handle BACnet Priority
+        let finalValue = payloadValue
+        if (channelProtocol.value === 'bacnet-ip') {
+            finalValue = {
+                value: payloadValue,
+                priority: writeDialog.priority
+            }
+        }
+
         await request.post('/api/write', {
             channel_id: channelId.value,
             device_id: deviceId.value,
             point_id: writeDialog.pointID,
-            value: payloadValue
+            value: finalValue
         })
         showMessage('写入命令已发送', 'success')
         writeDialog.visible = false
@@ -3307,6 +3366,16 @@ const openDebug = async (point) => {
 }
 
 // 类型判断与转换
+const getProtocolTransport = (p) => {
+    if (!p) return 'Unknown'
+    const proto = p.toLowerCase()
+    if (proto.includes('bacnet')) return 'UDP'
+    if (proto.includes('snmp')) return 'UDP'
+    if (proto.includes('tcp') || proto.includes('modbus-tcp') || proto.includes('opc') || proto.includes('s7')) return 'TCP'
+    if (proto.includes('rtu') || proto.includes('serial')) return 'Serial'
+    return 'TCP/IP'
+}
+
 const isBoolType = (dt) => ['bool', 'boolean', 'bit'].includes((dt || '').toLowerCase())
 const isStringType = (dt) => ['string'].includes((dt || '').toLowerCase())
 const isFloatType = (dt) => ['float', 'float32', 'float64', 'double'].includes((dt || '').toLowerCase())

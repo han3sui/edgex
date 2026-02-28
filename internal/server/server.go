@@ -239,6 +239,15 @@ func (s *Server) setupRoutes() {
 	api.Delete("/channels/:channelId/devices/:deviceId/points", s.removePoints)
 	api.Post("/channels/:channelId/devices/:deviceId/scan", s.scanDevice) // New: Scan points in device
 
+	// 兼容路径：UI 可能会尝试直接通过设备 ID 访问点位（不带 channelId）
+	api.Get("/devices/:deviceId/points", s.getDevicePoints)
+	api.Post("/devices/:deviceId/points", s.getDevicePoints)                                        // 处理一些异常的 POST 行为
+	api.Options("/devices/:deviceId/points", func(c *fiber.Ctx) error { return c.SendStatus(200) }) // 处理 CORS 预检
+
+	// 特殊兼容：处理由于前端或反向代理可能导致的路径异常
+	api.Get("/channels/:channelId/devices/:deviceId/points/", s.getDevicePoints)
+	api.Get("/devices/:deviceId/points/", s.getDevicePoints)
+
 	// 点位调试接口
 	api.Get("/points/:pointId/debug", s.getPointDebug)
 
@@ -702,6 +711,28 @@ func (s *Server) getDevice(c *fiber.Ctx) error {
 func (s *Server) getDevicePoints(c *fiber.Ctx) error {
 	channelId := c.Params("channelId")
 	deviceId := c.Params("deviceId")
+
+	// 兼容逻辑：如果没有 channelId，尝试搜索所有通道找到匹配的设备
+	if channelId == "" {
+		zap.L().Debug("getDevicePoints: missing channelId, searching for device", zap.String("deviceId", deviceId))
+		channels := s.cm.GetChannels()
+		for _, ch := range channels {
+			for _, dev := range ch.Devices {
+				if dev.ID == deviceId {
+					channelId = ch.ID
+					zap.L().Debug("getDevicePoints: found device in channel", zap.String("deviceId", deviceId), zap.String("channelId", channelId))
+					break
+				}
+			}
+			if channelId != "" {
+				break
+			}
+		}
+	}
+
+	if channelId == "" {
+		return c.Status(404).JSON(fiber.Map{"error": "device not found in any channel"})
+	}
 
 	points, err := s.cm.GetDevicePoints(channelId, deviceId)
 	if err != nil {

@@ -1,9 +1,9 @@
-id: Room_FC_2014_2228319
-name: Room_FC_2014_2228319
+id: Room_FC_2014_19
+name: Room_FC_1111_NAME
 enable: true
-interval: 5s
+interval: 15s
 config:
-    device_id: 2228319
+    instance_id: 2228319
     ip: 192.168.3.112
     model_name: Room_FC_2014
     network_number: 0

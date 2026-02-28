@@ -1,9 +1,9 @@
-id: bacnet-2228316
-name: Device 2228316
+id: bacnet-16
+name: Device 16
 enable: true
 interval: 10s
 config:
-  device_id: 2228316
+  instance_id: 2228316
   ip: 192.168.3.112
   network_number: 0
   port: 63501

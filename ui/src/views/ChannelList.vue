@@ -726,16 +726,16 @@
                                         <v-icon size="small">mdi-protocol</v-icon>
                                     </template>
                                     <v-list-item-title>协议</v-list-item-title>
-                                    <v-list-item-subtitle>{{ metricsDialog.channel?.protocol }}</v-list-item-subtitle>
+                                    <v-list-item-subtitle>{{ metricsDialog.metrics?.protocol || metricsDialog.channel?.protocol }}</v-list-item-subtitle>
                                 </v-list-item>
                                 
-                                <!-- 连接详情 (从 config 解析) -->
-                                <v-list-item v-if="getConnectionUrl(metricsDialog.channel)">
+                                <!-- 连接详情 (优先使用监控指标中的地址) -->
+                                <v-list-item v-if="metricsDialog.metrics?.remoteAddr || getConnectionUrl(metricsDialog.channel)">
                                     <template v-slot:prepend>
                                         <v-icon size="small">mdi-lan-connect</v-icon>
                                     </template>
                                     <v-list-item-title>连接地址</v-list-item-title>
-                                    <v-list-item-subtitle>{{ getConnectionUrl(metricsDialog.channel) }}</v-list-item-subtitle>
+                                    <v-list-item-subtitle>{{ metricsDialog.metrics?.remoteAddr || getConnectionUrl(metricsDialog.channel) }}</v-list-item-subtitle>
                                 </v-list-item>
                                 
                                 <v-list-item v-if="metricsDialog.channel?.config?.slave_id !== undefined">
@@ -765,7 +765,7 @@
                                 </template>
                                 
                                 <!-- TCP/Network metrics -->
-            <template v-if="metricsDialog.channel?.protocol?.includes('tcp') || metricsDialog.channel?.protocol?.includes('ip')">
+            <template>
                 <v-divider class="my-2"></v-divider>
                 
                 <v-list-item v-if="metricsDialog.metrics?.localAddr || metricsDialog.metrics?.remoteAddr">
@@ -781,21 +781,21 @@
                   </v-list-item>
                 
                 <v-list-item>
-                                        <template v-slot:prepend>
-                                            <v-icon size="small">mdi-clock-outline</v-icon>
-                                        </template>
-                                        <v-list-item-title>连接时长</v-list-item-title>
-                                        <v-list-item-subtitle>{{ formatDuration(metricsDialog.metrics?.connectionSeconds) }}</v-list-item-subtitle>
-                                    </v-list-item>
-                                    
-                                    <v-list-item v-if="metricsDialog.metrics?.lastDisconnectTime && metricsDialog.metrics.lastDisconnectTime !== '0001-01-01T00:00:00Z'">
-                                        <template v-slot:prepend>
-                                            <v-icon size="small" color="error">mdi-lan-disconnect</v-icon>
-                                        </template>
-                                        <v-list-item-title>最后断开</v-list-item-title>
-                                        <v-list-item-subtitle class="text-error">{{ formatLastDisconnect(metricsDialog.metrics.lastDisconnectTime) }}</v-list-item-subtitle>
-                                    </v-list-item>
-                                </template>
+                    <template v-slot:prepend>
+                        <v-icon size="small">mdi-clock-outline</v-icon>
+                    </template>
+                    <v-list-item-title>连接时长</v-list-item-title>
+                    <v-list-item-subtitle>{{ formatDuration(metricsDialog.metrics?.connectionSeconds) }}</v-list-item-subtitle>
+                </v-list-item>
+                
+                <v-list-item v-if="metricsDialog.metrics?.lastDisconnectTime && metricsDialog.metrics.lastDisconnectTime !== '0001-01-01T00:00:00Z'">
+                    <template v-slot:prepend>
+                        <v-icon size="small" color="error">mdi-lan-disconnect</v-icon>
+                    </template>
+                    <v-list-item-title>最后断开</v-list-item-title>
+                    <v-list-item-subtitle class="text-error">{{ formatLastDisconnect(metricsDialog.metrics.lastDisconnectTime) }}</v-list-item-subtitle>
+                </v-list-item>
+            </template>
                                 
                                 <v-list-item v-if="metricsDialog.metrics?.reconnectCount > 0">
                                     <template v-slot:prepend>
@@ -810,7 +810,7 @@
                         <!-- 右侧：详细指标 -->
                         <v-col cols="12" md="8">
                             <v-row>
-                                <v-col cols="6" md="3" v-for="stat in metricsDialog.stats" :key="stat.label">
+                                <v-col cols="4" md="4" v-for="stat in metricsDialog.stats" :key="stat.label">
                                     <v-card class="metric-stat-card pa-3 text-center" :color="stat.color" variant="tonal">
                                         <div class="text-caption text-grey-darken-1">{{ stat.label }}</div>
                                         <div class="text-h5 font-weight-bold mt-1">{{ stat.value }}</div>
@@ -1237,20 +1237,23 @@ const openMetricsDialog = async (channel) => {
         const data = await request.get(`/api/channels/${channel.id}/metrics`)
         metricsDialog.metrics = data
         
-        // 计算质量评分
-        let score = 100
-        if (data.successRate !== undefined) score -= (1 - data.successRate) * 40
-        if (data.crcErrorRate !== undefined) score -= data.crcErrorRate * 20
-        if (data.retryRate !== undefined) score -= data.retryRate * 20
-        if (data.avgRtt > 100) score -= Math.min(10, (data.avgRtt - 100) / 50)
-        metricsDialog.qualityScore = Math.max(0, Math.round(score))
+        // 使用API返回的质量评分
+        metricsDialog.qualityScore = data.qualityScore || 100
         
         // 生成统计数据
         metricsDialog.stats = [
             { label: '成功率', value: formatPercent(data.successRate), color: getSuccessRateColor(data.successRate) },
             { label: '平均RTT', value: formatMs(data.avgRtt), color: '' },
+            { label: '最大RTT', value: formatMs(data.maxRtt), color: '' },
+            { label: '最小RTT', value: formatMs(data.minRtt), color: '' },
+            { label: '总请求数', value: data.totalRequests || 0, color: '' },
+            { label: '成功次数', value: data.successCount || 0, color: 'success' },
+            { label: '失败次数', value: data.failureCount || 0, color: data.failureCount > 0 ? 'error' : '' },
             { label: '超时次数', value: data.timeoutCount || 0, color: data.timeoutCount > 0 ? 'warning' : '' },
-            { label: 'CRC错误', value: data.crcError || 0, color: data.crcError > 0 ? 'error' : '' }
+            { label: 'CRC错误', value: data.crcError || 0, color: data.crcError > 0 ? 'error' : '' },
+            { label: '重试率', value: formatPercent(data.retryRate), color: data.retryRate > 0.1 ? 'warning' : '' },
+            { label: '异常次数', value: data.exceptionCode || 0, color: data.exceptionCode > 0 ? 'error' : '' },
+            { label: '丢包率', value: formatPercent(data.packetLoss), color: data.packetLoss > 0.01 ? 'warning' : '' }
         ]
         
         // 趋势数据 (如果有)

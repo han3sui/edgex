@@ -10,6 +10,9 @@ type ChannelMetrics struct {
 	// 质量评分 (0-100)
 	QualityScore int `json:"qualityScore"`
 
+	// 协议信息
+	Protocol string `json:"protocol"` // 协议类型
+
 	// 通信质量指标
 	SuccessRate   float64 `json:"successRate"`   // 成功率 (0-1)
 	TimeoutCount  int64   `json:"timeoutCount"`  // 超时次数
@@ -58,7 +61,7 @@ type TrendPoint struct {
 type ErrorRecord struct {
 	Time    time.Time `json:"time"`    // 发生时间
 	Type    string    `json:"type"`    // 错误类型: timeout, crc, exception, network
-	Code    string    `json:"code""`   // 错误码
+	Code    string    `json:"code"`    // 错误码
 	Message string    `json:"message"` // 错误描述
 }
 
@@ -90,7 +93,7 @@ type PointMetrics struct {
 	PointID        string    `json:"pointId"`        // 点位ID
 	LastUpdateTime time.Time `json:"lastUpdateTime"` // 最近更新时间
 	Quality        string    `json:"quality"`        // 质量码: Good, Bad, Uncertain
-	RawValue       []byte    `json:"rawValue""`      // 原始寄存器数据
+	RawValue       []byte    `json:"rawValue"`       // 原始寄存器数据
 	ParsedValue    any       `json:"parsedValue"`    // 解析后的值
 	DataType       string    `json:"dataType"`       // 数据类型
 	ByteOrder      string    `json:"byteOrder"`      // 字节序
@@ -268,7 +271,49 @@ func (mc *MetricsCollector) UpdateDeviceMetrics(deviceID string, update func(*De
 
 	metrics := mc.getOrCreateDeviceMetrics(deviceID)
 	update(metrics)
+
+	// Recalculate HealthScore
+	metrics.HealthScore = mc.calculateDeviceHealthScore(metrics)
+
 	metrics.Timestamp = time.Now()
+}
+
+// calculateDeviceHealthScore 计算设备健康评分
+func (mc *MetricsCollector) calculateDeviceHealthScore(m *DeviceMetrics) int {
+	score := 100
+
+	// 连续失败扣分 (每次扣10分，最多30分)
+	if m.ConsecutiveFailures > 0 {
+		deduction := m.ConsecutiveFailures * 10
+		if deduction > 30 {
+			deduction = 30
+		}
+		score -= deduction
+	}
+
+	// 点位成功率扣分 (权重40%)
+	// 如果成功率 < 100%，则扣分
+	if m.PointSuccessRate < 1.0 {
+		score -= int((1.0 - m.PointSuccessRate) * 40)
+	}
+
+	// 异常点位扣分 (每个异常扣5分，最多20分)
+	if m.AbnormalPoints > 0 {
+		deduction := m.AbnormalPoints * 5
+		if deduction > 20 {
+			deduction = 20
+		}
+		score -= deduction
+	}
+
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+
+	return score
 }
 
 // cleanupHistory 清理过期的历史记录

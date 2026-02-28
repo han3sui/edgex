@@ -74,7 +74,7 @@ cm.StartChannel()
 | `GET /api/channels/:id/devices/:id` | 获取设备详情 | 第二层 |
 | `GET /api/channels/:id/devices/:id/points` | 获取点位数据 | 第三层 |
 | `POST /api/write` | 写入点位值 | 点位操作 |
-| `GET /api/ws/values` | WebSocket 实时数据 | 实时推送 |
+| `GET /api/ws/devices/:id/values` | WebSocket 实时数据 | 实时推送 |
 
 ### 6. 驱动层调整
 
@@ -95,46 +95,66 @@ cm.StartChannel()
 - 保留基本的 API，但返回错误或过时警告
 - 新项目应使用 ChannelManager
 
-## 配置文件变更
-
-### 旧配置格式（已弃用）
-
-```yaml
-devices:
-  - id: "device-1"
-    name: "Device 1"
-    protocol: "modbus-tcp"
-    slaves:
-      - id: 1
-        points: [...]
-```
+## 配置文件
 
 ### 新配置格式（推荐）
 
 ```yaml
-channels:
-  - id: "modbus-tcp-1"
-    name: "Modbus TCP Channel 1"
-    protocol: "modbus-tcp"
-    enable: true
-    config:
-      url: "tcp://192.168.1.100:502"
-    devices:
-      - id: "device-1"
-        name: "Device 1"
-        enable: true
-        interval: 5s
-        config:
-          slave_id: 1
-        points:
-          - id: "temp"
-            name: "Temperature"
-            address: "40001"
-            datatype: "int16"
-            # ... 其他字段
+- id: jxy3kvpohmetzct0
+  name: BACnet-1
+  protocol: bacnet-ip
+  enable: true
+  config:
+    baudRate: 9600
+    byte_order_4: ABCD
+    connectionType: serial
+    dataBits: 8
+    enableSmartProbe: false
+    instruction_interval: 10
+    ip: 192.168.3.112
+    key: ""
+    max_retries: 3
+    parity: E
+    probeEnableMTU: true
+    probeMaxConsecutive: 20
+    probeMaxDepth: 6
+    probeTimeout: 3000
+    retry_interval: 100
+    start_address: 1
+    stopBits: 1
+  devices:
+    - id: bacnet-18
+      name: ""
+      enable: false
+      interval: 0s
+      device_file: conf/devices/bacnet-ip/bacnet-2228318.yaml
+      config: {}
+      points: []
+    - id: bacnet-16
+      name: ""
+      enable: false
+      interval: 0s
+      device_file: conf/devices/bacnet-ip/bacnet-2228316.yaml
+      config: {}
+      points: []
+    - id: bacnet-17
+      name: ""
+      enable: false
+      interval: 0s
+      device_file: conf/devices/bacnet-ip/bacnet-2228317.yaml
+      config: {}
+      points: []
+    - id: Room_FC_2014_19
+      name: ""
+      enable: false
+      interval: 0s
+      device_file: conf/devices/bacnet-ip/Room_FC_2014_2228319.yaml
+      config: {}
+      points: []
+
 ```
 
-**参见：** [config_v2_three_level.yaml](./config_v2_three_level.yaml)
+
 
 ## 前后端对接
 
@@ -149,7 +169,7 @@ channels:
   ↓
 3. 点击设备，显示点位详情 → GET /api/channels/:channelId/devices/:deviceId/points
   ↓
-4. 实时更新 ← WebSocket /api/ws/values
+4. 实时更新 ← WebSocket /api/ws/devices/:deviceId/values
 ```
 
 ### 后端采集流程
@@ -196,11 +216,9 @@ go build ./cmd/main.go -o main.exe
 # 使用默认配置
 ./main.exe
 
-# 使用三级配置示例
-./main.exe -config config_v2_three_level.yaml
 
 # 访问 Web UI
-http://localhost:8080
+http://localhost:8082
 ```
 
 ## 测试建议
@@ -209,27 +227,27 @@ http://localhost:8080
 
 ```bash
 # 应该看到通道被正确加载
-./main.exe -config config_v2_three_level.yaml 2>&1 | grep Channel
+go run cmd/main.go 
 ```
 
 ### 2. 验证 API 端点
 
 ```bash
 # 获取通道列表
-curl http://localhost:8080/api/channels
+curl http://localhost:8082/api/channels
 
 # 获取设备列表
-curl http://localhost:8080/api/channels/modbus-tcp-1/devices
+curl http://localhost:8082/api/channels/jxy3kvpohmetzct0/devices
 
 # 获取点位数据
-curl http://localhost:8080/api/channels/modbus-tcp-1/devices/device-1/points
+curl http://localhost:8082/api/channels/jxy3kvpohmetzct0/devices/device-1/points
 ```
 
 ### 3. 验证 WebSocket 连接
 
 ```bash
 # 使用 wscat 工具连接
-wscat -c ws://localhost:8080/api/ws/values
+wscat -c ws://localhost:8082/api/ws/values
 # 应该接收到实时的点位数据更新
 ```
 

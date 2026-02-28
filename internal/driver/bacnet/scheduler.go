@@ -110,6 +110,10 @@ func (s *PointScheduler) Read(ctx context.Context, points []model.Point) (map[st
 				if firstErr == nil {
 					firstErr = err
 				}
+				// Abort remaining chunks if this one failed completely (likely device offline)
+				// This prevents long blocking times (e.g. 50s) when device is down
+				log.Printf("[WARN] Aborting remaining chunks due to failure")
+				break
 			}
 			continue
 		}
@@ -376,23 +380,6 @@ func (s *PointScheduler) readSingleProperties(chunk btypes.MultiplePropertyData,
 
 			// Read
 			resp, err := s.client.ReadProperty(s.targetDevice, pd)
-			if err != nil && len(s.targetDevice.Addr.Mac) >= 6 {
-				port := int(s.targetDevice.Addr.Mac[4])<<8 | int(s.targetDevice.Addr.Mac[5])
-				if port != 47808 {
-					log.Printf("[WARN] ReadProperty failed on ephemeral port %d, trying 47808: %v", port, err)
-					fallbackDev := s.targetDevice
-					newMac := make([]byte, len(s.targetDevice.Addr.Mac))
-					copy(newMac, s.targetDevice.Addr.Mac)
-					newMac[4] = 0xBA
-					newMac[5] = 0xC0
-					fallbackDev.Addr.Mac = newMac
-					fallbackDev.Port = 47808
-					resp, err = s.client.ReadProperty(fallbackDev, pd)
-					if err == nil {
-						log.Printf("[INFO] Fallback to 47808 succeeded for %v", obj.ID)
-					}
-				}
-			}
 
 			if err != nil {
 				log.Printf("[WARN] Fallback ReadProperty failed for %v: %v", obj.ID, err)

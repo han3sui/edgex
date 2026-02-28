@@ -97,8 +97,8 @@ func main() {
 
 		// Probe 127.0.0.1 with Device:4194303
 		probeAndScan(conn, "127.0.0.1", 47808)
-		// Probe 192.168.3.106
-		probeAndScan(conn, "192.168.3.106", 47808)
+		// Probe 192.168.3.112
+		probeAndScan(conn, "192.168.3.112", 47808)
 		return
 	}
 

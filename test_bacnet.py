@@ -123,8 +123,8 @@ def test_read_point(session, channel_id, device_id):
 if __name__ == "__main__":
     session = login()
     if session:
-        channel_id = "bac-test-1"
-        device_id = "Room_FC_2014_2228318"
+        channel_id = "jxy3kvpohmetzct0"
+        device_id = "bacnet-18"
         
         test_scan_channel(session, channel_id)
         test_scan_device(session, channel_id, device_id)

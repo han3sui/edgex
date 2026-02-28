@@ -210,6 +210,7 @@ type Value struct {
 	Value     any       `json:"value"`
 	Quality   string    `json:"quality"`
 	TS        time.Time `json:"timestamp"`
+	Meta      map[string]any `json:"meta,omitempty"`
 }
 
 // PointData represents point configuration and current value for frontend display
@@ -247,6 +248,7 @@ type Device struct {
 	Storage    DeviceStorage  `json:"storage,omitempty" yaml:"storage,omitempty"`         // Data storage strategy
 	Points     []Point        `json:"points" yaml:"points"`                               // 该设备的点位列表
 	State      int            `json:"state" yaml:"-"`                                     // 运行时状态：0=Online, 1=Unstable, 2=Offline, 3=Quarantine
+	QualityScore int          `json:"quality_score" yaml:"-"`                             // 质量评分 (0-100)
 	StopChan   chan struct{}  `json:"-" yaml:"-"`
 	// Runtime state fields
 	NodeRuntime *NodeRuntime `json:"runtime,omitempty" yaml:"-"`
