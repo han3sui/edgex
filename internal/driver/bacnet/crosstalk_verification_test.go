@@ -96,6 +96,14 @@ func (m *SmartMockClient) WriteMultiProperty(dev btypes.Device, wp btypes.Multip
 	return nil
 }
 
+func (m *SmartMockClient) ReadPropertyWithTimeout(dest btypes.Device, rp btypes.PropertyData, timeout time.Duration) (btypes.PropertyData, error) {
+	return m.ReadProperty(dest, rp)
+}
+
+func (m *SmartMockClient) ReadMultiPropertyWithTimeout(dev btypes.Device, rp btypes.MultiplePropertyData, timeout time.Duration) (btypes.MultiplePropertyData, error) {
+	return m.ReadMultiProperty(dev, rp)
+}
+
 // TestCrosstalkVerification verifies that points are read from the correct devices
 // and that crosstalk (reading Device A's data for Device B) is prevented.
 func TestCrosstalkVerification(t *testing.T) {
@@ -181,30 +189,38 @@ func TestCrosstalkVerification(t *testing.T) {
 			var ok bool
 
 			// Wait for context to be created (async discovery)
-			for i := 0; i < 10; i++ {
+			for i := 0; i < 20; i++ {
 				d.mu.Lock()
 				_, exists := d.deviceContexts[tc.InstanceID]
 				d.mu.Unlock()
 				if exists {
 					break
 				}
-				time.Sleep(50 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 			}
 
-			results, err := d.ReadPoints(context.Background(), points)
-			if err != nil {
-				t.Fatalf("ReadPoints failed: %v", err)
-			}
+			// Poll loop (since ReadPoints is cached)
+			// Trigger poll first
+			d.ReadPoints(context.Background(), points)
 
-			if result, found := results["Setpoint.1"]; found {
-				if v, typeOk := result.Value.(float32); typeOk {
-					val = v
-					ok = true
-				} else {
-					t.Errorf("Result type mismatch: expected float32, got %T", result.Value)
+			for i := 0; i < 10; i++ {
+				results, err := d.ReadPoints(context.Background(), points)
+				if err != nil {
+					// Ignore error during warmup
 				}
-			} else {
-				t.Errorf("Point Setpoint.1 not found in results")
+
+				if result, found := results["Setpoint.1"]; found {
+					if v, typeOk := result.Value.(float32); typeOk {
+						val = v
+						ok = true
+						break
+					}
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			if !ok {
+				t.Errorf("Point Setpoint.1 not found in results after polling")
 			}
 
 			if ok {

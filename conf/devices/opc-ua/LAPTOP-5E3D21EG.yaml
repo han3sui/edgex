@@ -1,15 +1,59 @@
-id: LAPTOP-5E3D21EG
-name: LAPTOP-5E3D21EG
-enable: true
-interval: 10s
 config:
     auth_method: Anonymous
     endpoint: opc.tcp://LAPTOP-5E3D21EG:53530/OPCUA/SimulationServer
     security_mode: None
     security_policy: None
+enable: true
+id: LAPTOP-5E3D21EG
+interval: 10s
+name: LAPTOP-5E3D21EG
+points:
+    - address: ns=3;i=1011
+      datatype: float32
+      group: ""
+      id: ns=3;i=1011
+      name: ns=3;i=1011
+      offset: 0
+      readwrite: R
+      report_mode: ""
+      scale: 1
+      threshold: null
+      unit: ""
+    - address: ns=3;i=1012
+      datatype: float32
+      group: ""
+      id: ns=3;i=1012
+      name: ns=3;i=1012
+      offset: 0
+      readwrite: R
+      report_mode: ""
+      scale: 1
+      threshold: null
+      unit: ""
+    - address: ns=3;i=1001
+      datatype: float32
+      group: ""
+      id: ns=3;i=1001
+      name: ns=3;i=1001
+      offset: 0
+      readwrite: R
+      report_mode: ""
+      scale: 1
+      threshold: null
+      unit: ""
+    - address: ns=3;i=1006
+      datatype: float32
+      group: ""
+      id: ns=3;i=1006
+      name: ns=3;i=1006
+      offset: 0
+      readwrite: R
+      report_mode: ""
+      scale: 1
+      threshold: null
+      unit: ""
 storage:
     enable: false
-    strategy: interval
     interval: 1
     max_records: 1000
-points: []
+    strategy: interval

@@ -3,6 +3,7 @@ package bacnet
 import (
 	"context"
 	"testing"
+	"time"
 
 	"edge-gateway/internal/driver/bacnet/btypes"
 )
@@ -39,6 +40,14 @@ func (m *MockScanClient) ReadMultiProperty(dev btypes.Device, rp btypes.Multiple
 func (m *MockScanClient) WriteProperty(dest btypes.Device, wp btypes.PropertyData) error { return nil }
 func (m *MockScanClient) WriteMultiProperty(dev btypes.Device, wp btypes.MultiplePropertyData) error {
 	return nil
+}
+
+func (m *MockScanClient) ReadPropertyWithTimeout(dest btypes.Device, rp btypes.PropertyData, timeout time.Duration) (btypes.PropertyData, error) {
+	return m.ReadProperty(dest, rp)
+}
+
+func (m *MockScanClient) ReadMultiPropertyWithTimeout(dev btypes.Device, rp btypes.MultiplePropertyData, timeout time.Duration) (btypes.MultiplePropertyData, error) {
+	return m.ReadMultiProperty(dev, rp)
 }
 
 func TestBACnetDriver_Scan_MultiInterface(t *testing.T) {

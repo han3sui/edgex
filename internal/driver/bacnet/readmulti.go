@@ -19,9 +19,13 @@ const maxReattempt = 2
 // is a batch operation compared to a ReadProperty and should be used in place
 // when reading more than two objects/properties.
 func (c *client) ReadMultiProperty(device btypes.Device, rp btypes.MultiplePropertyData) (btypes.MultiplePropertyData, error) {
+	return c.ReadMultiPropertyWithTimeout(device, rp, 10*time.Second)
+}
+
+func (c *client) ReadMultiPropertyWithTimeout(device btypes.Device, rp btypes.MultiplePropertyData, timeout time.Duration) (btypes.MultiplePropertyData, error) {
 	var out btypes.MultiplePropertyData
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	id, err := c.tsm.ID(ctx)
 	if err != nil {
@@ -59,7 +63,7 @@ func (c *client) ReadMultiProperty(device btypes.Device, rp btypes.MultiplePrope
 	err = fmt.Errorf("go")
 
 	for count := 0; err != nil && count < maxReattempt; count++ {
-		out, err = c.sendReadMultipleProperty(id, device, npdu, pack)
+		out, err = c.sendReadMultipleProperty(id, device, npdu, pack, timeout)
 		if err == nil {
 			return out, nil
 		}
@@ -67,14 +71,14 @@ func (c *client) ReadMultiProperty(device btypes.Device, rp btypes.MultiplePrope
 	return out, fmt.Errorf("failed %d tries: %v", maxReattempt, err)
 }
 
-func (c *client) sendReadMultipleProperty(id int, dev btypes.Device, npdu *btypes.NPDU, request []byte) (btypes.MultiplePropertyData, error) {
+func (c *client) sendReadMultipleProperty(id int, dev btypes.Device, npdu *btypes.NPDU, request []byte, timeout time.Duration) (btypes.MultiplePropertyData, error) {
 	var out btypes.MultiplePropertyData
 	_, err := c.Send(dev.Addr, npdu, request, nil)
 	if err != nil {
 		return out, err
 	}
 
-	raw, err := c.tsm.Receive(id, time.Duration(10)*time.Second)
+	raw, err := c.tsm.Receive(id, timeout)
 	if err != nil {
 		return out, fmt.Errorf("unable to receive id %d: %v", id, err)
 	}

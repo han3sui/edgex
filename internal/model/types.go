@@ -210,6 +210,7 @@ type Value struct {
 	Value     any       `json:"value"`
 	Quality   string    `json:"quality"`
 	TS        time.Time `json:"timestamp"`
+	CachedAt  time.Time `json:"cachedAt,omitempty"`
 	Meta      map[string]any `json:"meta,omitempty"`
 }
 

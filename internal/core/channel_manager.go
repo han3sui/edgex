@@ -1318,7 +1318,7 @@ func (cm *ChannelManager) AddDevice(channelID string, dev *model.Device) error {
 			zap.L().Warn("Failed to create device directory", zap.String("dir", deviceDir), zap.Error(err))
 		} else {
 			// 保存设备配置到文件
-			if err := saveDeviceToFile(deviceFilePath, dev); err != nil {
+			if err := saveDeviceToFile(deviceFilePath, dev, ch.Protocol); err != nil {
 				zap.L().Warn("Failed to save device file", zap.String("file", deviceFilePath), zap.Error(err))
 			} else {
 				zap.L().Info("Device file created", zap.String("file", deviceFilePath))
@@ -1344,7 +1344,7 @@ func (cm *ChannelManager) AddDevice(channelID string, dev *model.Device) error {
 }
 
 // saveDeviceToFile 保存设备配置到文件
-func saveDeviceToFile(filePath string, dev *model.Device) error {
+func saveDeviceToFile(filePath string, dev *model.Device, protocol string) error {
 	// 创建设备配置副本，只保存需要的字段
 	deviceConfig := model.Device{
 		ID:       dev.ID,
@@ -1360,6 +1360,28 @@ func saveDeviceToFile(filePath string, dev *model.Device) error {
 	data, err := yaml.Marshal(deviceConfig)
 	if err != nil {
 		return err
+	}
+
+	// 如果协议不是 Modbus，移除 Modbus 特有字段 (register_type, function_code)
+	if !strings.HasPrefix(protocol, "modbus") {
+		var rawMap map[string]interface{}
+		if err := yaml.Unmarshal(data, &rawMap); err != nil {
+			return err // Should not happen
+		}
+
+		if points, ok := rawMap["points"].([]interface{}); ok {
+			for i := range points {
+				if pMap, ok := points[i].(map[string]interface{}); ok {
+					delete(pMap, "register_type")
+					delete(pMap, "function_code")
+				}
+			}
+			// 重新序列化
+			data, err = yaml.Marshal(rawMap)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	// 写入文件
@@ -1403,6 +1425,15 @@ func (cm *ChannelManager) AddPoint(channelID, deviceID string, point *model.Poin
 
 	// Add point
 	dev.Points = append(dev.Points, *point)
+
+	// 更新设备文件
+	if dev.DeviceFile != "" {
+		if err := saveDeviceToFile(dev.DeviceFile, dev, ch.Protocol); err != nil {
+			zap.L().Warn("Failed to update device file", zap.String("file", dev.DeviceFile), zap.Error(err))
+		} else {
+			zap.L().Info("Device file updated", zap.String("file", dev.DeviceFile))
+		}
+	}
 
 	// Restart device to apply changes
 	return cm.restartDeviceLocked(ch, idx)
@@ -1456,7 +1487,7 @@ func (cm *ChannelManager) AddPoints(channelID, deviceID string, points []model.P
 
 	// 更新设备文件
 	if dev.DeviceFile != "" {
-		if err := saveDeviceToFile(dev.DeviceFile, dev); err != nil {
+		if err := saveDeviceToFile(dev.DeviceFile, dev, ch.Protocol); err != nil {
 			zap.L().Warn("Failed to update device file", zap.String("file", dev.DeviceFile), zap.Error(err))
 		} else {
 			zap.L().Info("Device file updated", zap.String("file", dev.DeviceFile))
@@ -1511,7 +1542,7 @@ func (cm *ChannelManager) UpdatePoint(channelID, deviceID string, point *model.P
 
 	// 更新设备文件
 	if dev.DeviceFile != "" {
-		if err := saveDeviceToFile(dev.DeviceFile, dev); err != nil {
+		if err := saveDeviceToFile(dev.DeviceFile, dev, ch.Protocol); err != nil {
 			zap.L().Warn("Failed to update device file", zap.String("file", dev.DeviceFile), zap.Error(err))
 		} else {
 			zap.L().Info("Device file updated", zap.String("file", dev.DeviceFile))
@@ -1561,7 +1592,7 @@ func (cm *ChannelManager) RemovePoint(channelID, deviceID, pointID string) error
 
 	// 更新设备文件
 	if dev.DeviceFile != "" {
-		if err := saveDeviceToFile(dev.DeviceFile, dev); err != nil {
+		if err := saveDeviceToFile(dev.DeviceFile, dev, ch.Protocol); err != nil {
 			zap.L().Warn("Failed to update device file", zap.String("file", dev.DeviceFile), zap.Error(err))
 		} else {
 			zap.L().Info("Device file updated", zap.String("file", dev.DeviceFile))
@@ -1619,7 +1650,7 @@ func (cm *ChannelManager) RemovePoints(channelID, deviceID string, pointIDs []st
 
 	// 更新设备文件
 	if dev.DeviceFile != "" {
-		if err := saveDeviceToFile(dev.DeviceFile, dev); err != nil {
+		if err := saveDeviceToFile(dev.DeviceFile, dev, ch.Protocol); err != nil {
 			zap.L().Warn("Failed to update device file", zap.String("file", dev.DeviceFile), zap.Error(err))
 		} else {
 			zap.L().Info("Device file updated", zap.String("file", dev.DeviceFile))

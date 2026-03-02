@@ -17,7 +17,7 @@ import (
 )
 
 const mtuHeaderLength = 4
-const defaultStateSize = 20
+const defaultStateSize = 64 // Increased from 20 to support more concurrent devices (32+)
 const forwardHeaderLength = 10
 
 type Client interface {
@@ -31,6 +31,8 @@ type Client interface {
 	Objects(dev btypes.Device) (btypes.Device, error)
 	ReadProperty(dest btypes.Device, rp btypes.PropertyData) (btypes.PropertyData, error)
 	ReadMultiProperty(dev btypes.Device, rp btypes.MultiplePropertyData) (btypes.MultiplePropertyData, error)
+	ReadPropertyWithTimeout(dest btypes.Device, rp btypes.PropertyData, timeout time.Duration) (btypes.PropertyData, error)
+	ReadMultiPropertyWithTimeout(dev btypes.Device, rp btypes.MultiplePropertyData, timeout time.Duration) (btypes.MultiplePropertyData, error)
 	WriteProperty(dest btypes.Device, wp btypes.PropertyData) error
 	WriteMultiProperty(dev btypes.Device, wp btypes.MultiplePropertyData) error
 }
@@ -78,7 +80,9 @@ func NewClient(cb *ClientBuilder) (Client, error) {
 		maxPDU = btypes.MaxAPDU
 	}
 	//build datalink
-	if iface != "" {
+	if cb.DataLink != nil {
+		dataLink = cb.DataLink
+	} else if iface != "" {
 		dataLink, err = datalink.NewUDPDataLink(iface, port)
 		if err != nil {
 			return nil, err

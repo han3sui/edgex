@@ -53,6 +53,13 @@ var getInterfaceIPs = func() ([]string, error) {
 	return ips, nil
 }
 
+const (
+	DeviceStateOnline   = 0
+	DeviceStateUnstable = 1
+	DeviceStateOffline  = 2
+	DeviceStateIsolated = 3
+)
+
 type BACnetDriver struct {
 	config               model.DriverConfig
 	client               Client
@@ -87,10 +94,18 @@ type DeviceConfig struct {
 }
 
 type DeviceContext struct {
-	Device        btypes.Device
-	Scheduler     *PointScheduler
-	Config        DeviceConfig
-	LastDiscovery time.Time
+	Device              btypes.Device
+	Scheduler           *PointScheduler
+	Config              DeviceConfig
+	LastDiscovery       time.Time
+	State               int
+	ConsecutiveFailures int
+	IsolationUntil      time.Time
+	IsolationCount      int
+	LastValues          map[string]model.Value
+	SubscribedPoints    map[string]model.Point
+	CacheMu             sync.RWMutex
+	StopPolling         chan struct{}
 }
 
 func NewBACnetDriver() driver.Driver {
@@ -343,21 +358,50 @@ func (d *BACnetDriver) ReadPoints(ctx context.Context, points []model.Point) (ma
 	}
 
 	devCtx, exists := d.deviceContexts[targetID]
-	d.mu.Unlock()
 
 	if !exists || devCtx.Scheduler == nil {
+		d.mu.Unlock()
 		if targetID != -1 {
-			d.checkRecovery(targetID)
+			// Do NOT call checkRecovery here synchronously. It acquires the lock and blocks.
+			go d.checkRecovery(targetID)
 		}
 		return nil, fmt.Errorf("scheduler not initialized for device %s (targetID=%d). Ensure device ID contains the BACnet Instance ID.", sID, targetID)
 	}
 
-	results, err := devCtx.Scheduler.Read(ctx, points)
-	if err != nil {
-		zap.L().Warn("ReadPoints failed", zap.Int("device_id", targetID), zap.Error(err))
-		d.checkRecovery(targetID)
+	// Register Points for Polling
+	devCtx.CacheMu.Lock()
+	if devCtx.SubscribedPoints == nil {
+		devCtx.SubscribedPoints = make(map[string]model.Point)
 	}
-	return results, err
+	newPoints := false
+	for _, p := range points {
+		if _, ok := devCtx.SubscribedPoints[p.ID]; !ok {
+			devCtx.SubscribedPoints[p.ID] = p
+			newPoints = true
+		}
+	}
+	devCtx.CacheMu.Unlock()
+	d.mu.Unlock()
+
+	// Ensure Polling is running
+	d.StartPolling(targetID)
+
+	// Return Cache
+	results := make(map[string]model.Value)
+	devCtx.CacheMu.RLock()
+	for _, p := range points {
+		if v, ok := devCtx.LastValues[p.ID]; ok {
+			results[p.ID] = v
+		}
+	}
+	devCtx.CacheMu.RUnlock()
+
+	// If cache missed new points or empty, trigger immediate poll
+	if newPoints || len(results) < len(points) {
+		go d.pollDevice(targetID)
+	}
+
+	return results, nil
 }
 
 func (d *BACnetDriver) checkRecovery(deviceID int) {
@@ -369,8 +413,6 @@ func (d *BACnetDriver) checkRecovery(deviceID int) {
 		return
 	}
 
-	var ip string
-	var port int
 	var lastDiscovery time.Time
 	var isContextExists bool
 
@@ -378,8 +420,6 @@ func (d *BACnetDriver) checkRecovery(deviceID int) {
 	if exists {
 		zap.L().Debug("checkRecovery: context found", zap.Int("device_id", deviceID))
 		lastDiscovery = devCtx.LastDiscovery
-		ip = devCtx.Config.IP
-		port = devCtx.Config.Port
 		isContextExists = true
 	} else {
 		zap.L().Debug("checkRecovery: context NOT found", zap.Int("device_id", deviceID))
@@ -406,28 +446,142 @@ func (d *BACnetDriver) checkRecovery(deviceID int) {
 	d.mu.Unlock()
 
 	go func() {
+		// 1. Get Config (Short Lock)
 		d.mu.Lock()
-		defer d.mu.Unlock()
+		client := d.client
+		var currentIP string
+		var currentPort int
+		if ctx, ok := d.deviceContexts[deviceID]; ok {
+			currentIP = ctx.Config.IP
+			currentPort = ctx.Config.Port
+		} else {
+			// Device removed?
+			d.mu.Unlock()
+			return
+		}
+		d.mu.Unlock()
 
-		// Re-check client in case it was closed in between (unlikely)
-		if d.client == nil {
+		if client == nil {
 			return
 		}
 
-		// Refresh config from context to ensure we use the latest settings
-		if ctx, ok := d.deviceContexts[deviceID]; ok {
-			ip = ctx.Config.IP
-			port = ctx.Config.Port
-		}
-
 		zap.L().Info("Auto-recovering BACnet connection", zap.Int("device_id", deviceID))
-		if err := d.discoverDevice(deviceID, ip, port); err != nil {
+
+		// 2. Perform Discovery (No Lock held here!)
+		// Note: discoverDevice itself logs and returns error.
+		// However, discoverDevice updates d.deviceContexts, so it needs lock inside!
+		// Let's check discoverDevice implementation.
+		// It calls d.client.WhoIs (Network I/O - Slow) -> Then locks to update context.
+		// Wait, discoverDevice in this file DOES NOT lock! It assumes caller holds lock?
+		// Let's check discoverDevice source again.
+
+		// Looking at discoverDevice (lines 221+):
+		// It does NOT have d.mu.Lock() at start.
+		// It calls d.client.WhoIs (Slow).
+		// Then it updates d.deviceContexts directly! -> RACE CONDITION if not locked!
+		// BUT if we lock around discoverDevice, we block everyone.
+
+		// REFACTOR: Split discoverDevice into "Probe" (I/O) and "UpdateContext" (Lock).
+
+		err := d.probeDevice(client, deviceID, currentIP, currentPort)
+		if err != nil {
 			zap.L().Error("Auto-recovery failed", zap.Error(err))
 		} else {
+			d.mu.Lock()
 			d.connected = true
+			d.mu.Unlock()
 			zap.L().Info("Auto-recovery successful", zap.Int("device_id", deviceID))
 		}
 	}()
+}
+
+// probeDevice performs network discovery without holding global lock
+func (d *BACnetDriver) probeDevice(client Client, deviceID int, ip string, port int) error {
+	zap.L().Info("Probing BACnet device", zap.Int("device_id", deviceID), zap.String("ip", ip), zap.Int("port", port))
+
+	// WhoIs
+	whois := &WhoIsOpts{
+		Low:  deviceID,
+		High: deviceID,
+	}
+
+	if ip != "" {
+		if port == 0 {
+			port = 47808
+		}
+		parsedIP := net.ParseIP(ip)
+		if parsedIP != nil {
+			addr := datalink.IPPortToAddress(parsedIP, port)
+			whois.Destination = addr
+		}
+	}
+
+	devices, err := client.WhoIs(whois)
+	if err != nil {
+		return fmt.Errorf("WhoIs failed: %v", err)
+	}
+
+	if len(devices) == 0 {
+		// Retry with Broadcast
+		whois.Destination = nil
+		time.Sleep(1 * time.Second)
+		devices, err = client.WhoIs(whois)
+		if err != nil || len(devices) == 0 {
+			// Fallback logic for IP/Port...
+			if ip != "" && port != 0 {
+				parsedIP := net.ParseIP(ip)
+				if parsedIP != nil {
+					addr := datalink.IPPortToAddress(parsedIP, port)
+					fakeDevice := btypes.Device{
+						Addr:         *addr,
+						ID:           btypes.ObjectID{Type: btypes.DeviceType, Instance: btypes.ObjectInstance(deviceID)},
+						DeviceID:     deviceID,
+						MaxApdu:      1476,
+						Segmentation: btypes.Enumerated(3),
+					}
+					devices = []btypes.Device{fakeDevice}
+				} else {
+					return fmt.Errorf("device %d not found", deviceID)
+				}
+			} else {
+				return fmt.Errorf("device %d not found", deviceID)
+			}
+		}
+	}
+
+	foundDev := devices[0]
+
+	// Update Context (Lock required)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Re-check existence
+	devCtx, ok := d.deviceContexts[deviceID]
+	if !ok {
+		return fmt.Errorf("context gone for device %d", deviceID)
+	}
+
+	devCtx.Device = foundDev
+	devCtx.LastDiscovery = time.Now()
+	// Update Scheduler target
+	devCtx.Scheduler = NewPointScheduler(d.client, devCtx.Device, 20, 10*time.Millisecond, 10*time.Second, d.useDataformatDecoder)
+
+	// If device was isolated, and probe succeeded, we should probably clear isolation?
+	// But ReadPoints logic clears it on next successful Read.
+	// Probe is just to refresh address.
+	// However, if Probe found it, it's likely online.
+	// Let's rely on ReadPoints to clear it, or we can clear it here.
+	// If we clear it here, ReadPoints will try to read immediately.
+	// Let's clear it to speed up recovery.
+	if devCtx.State == DeviceStateIsolated {
+		zap.L().Info("Device probe successful, clearing isolation state", zap.Int("device_id", deviceID))
+		devCtx.State = DeviceStateOnline // Or Unstable? Online seems fine.
+		devCtx.ConsecutiveFailures = 0
+		devCtx.IsolationCount = 0
+		devCtx.IsolationUntil = time.Time{}
+	}
+
+	return nil
 }
 
 func (d *BACnetDriver) WritePoint(ctx context.Context, point model.Point, value any) error {

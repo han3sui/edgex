@@ -12,7 +12,11 @@ import (
 
 // ReadProperty reads a single property from a single object in the given device.
 func (c *client) ReadProperty(device btypes.Device, rp btypes.PropertyData) (btypes.PropertyData, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	return c.ReadPropertyWithTimeout(device, rp, 10*time.Second)
+}
+
+func (c *client) ReadPropertyWithTimeout(device btypes.Device, rp btypes.PropertyData, timeout time.Duration) (btypes.PropertyData, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	id, err := c.tsm.ID(ctx)
 	if err != nil {
@@ -49,7 +53,7 @@ func (c *client) ReadProperty(device btypes.Device, rp btypes.PropertyData) (bty
 		}
 
 		var raw interface{}
-		raw, err = c.tsm.Receive(id, time.Duration(10)*time.Second)
+		raw, err = c.tsm.Receive(id, timeout)
 		if err != nil {
 			continue
 		}

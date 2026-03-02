@@ -738,7 +738,49 @@ func (s *Server) getDevicePoints(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(points)
+
+	// 获取通道信息以确定协议
+	ch := s.cm.GetChannel(channelId)
+	protocol := ""
+	if ch != nil {
+		protocol = ch.Protocol
+	}
+
+	// 转换并根据协议过滤字段
+	result := make([]map[string]any, 0, len(points))
+	for _, p := range points {
+		m := map[string]any{
+			"id":        p.ID,
+			"name":      p.Name,
+			"address":   p.Address,
+			"datatype":  p.DataType,
+			"value":     p.Value,
+			"quality":   p.Quality,
+			"timestamp": p.Timestamp,
+			"unit":      p.Unit,
+			"readwrite": p.ReadWrite,
+			"protocol":  protocol, // 增加协议字段
+		}
+
+		// 根据协议添加特定字段
+		switch protocol {
+		case "modbus-tcp", "modbus-rtu", "modbus-rtu-over-tcp":
+			m["slave_id"] = p.SlaveID
+			m["register_type"] = p.RegisterType
+			m["function_code"] = p.FunctionCode
+		case "bacnet-ip":
+			// BACnet 特定字段（如果有），当前 address 已包含必要信息
+		case "opc-ua":
+			// OPC UA 特定字段
+		default:
+			// 默认行为：如果是未知协议，保留 Modbus 字段以防万一（或者也可以选择不保留）
+			// 这里为了精简，默认不保留 Modbus 字段，除非明确是 Modbus 协议
+		}
+
+		result = append(result, m)
+	}
+
+	return c.JSON(result)
 }
 
 func (s *Server) getAllPoints(c *fiber.Ctx) error {

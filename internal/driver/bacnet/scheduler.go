@@ -96,16 +96,28 @@ func (s *PointScheduler) Read(ctx context.Context, points []model.Point) (map[st
 			Objects: mpd.Objects[i:end],
 		}
 
-		resp, err := s.client.ReadMultiProperty(s.targetDevice, chunk)
+		// User Requirement: Batch Read Timeout = 500ms
+		resp, err := s.client.ReadMultiPropertyWithTimeout(s.targetDevice, chunk, 500*time.Millisecond)
 		if err != nil {
+			// Optimization: If batch read timed out, single reads will likely timeout too.
+			// Abort fallback to save time (User requirement: < 3s).
+			if strings.Contains(err.Error(), "timeout") {
+				log.Printf("[WARN] Batch read timed out, skipping fallback to prevent cascade delay.")
+				if firstErr == nil {
+					firstErr = err
+				}
+				break
+			}
+
 			log.Printf("[WARN] BACnet Read chunk %d failed: %v. Attempting fallback to ReadProperty (Single)...", i/batchSize, err)
 
 			// Fallback: Try reading individual properties
 			preCount := len(result)
-			s.readSingleProperties(chunk, pointMap, result)
+			// User Requirement: Single Read Timeout = 200ms
+			s.readSinglePropertiesWithTimeout(chunk, pointMap, result, 200*time.Millisecond)
 			if len(result) > preCount {
 				log.Printf("[INFO] Fallback ReadProperty recovered %d points", len(result)-preCount)
-				err = nil // Clear error as we recovered
+				// err = nil // Do not fully clear error if not all recovered
 			} else {
 				if firstErr == nil {
 					firstErr = err
@@ -122,9 +134,20 @@ func (s *PointScheduler) Read(ctx context.Context, points []model.Point) (map[st
 		s.decodeResponse(resp, pointMap, result)
 	}
 
+	// Update Runtime State for ALL points
+	// If point is in result -> Success
+	// If point is NOT in result -> Failure
+	for _, p := range activePoints {
+		if _, ok := result[p.ID]; ok {
+			// Success handled later
+		} else {
+			// Mark as failed
+			s.handleFailure([]model.Point{p}, fmt.Errorf("point missing in read result"))
+		}
+	}
+
 	if firstErr != nil && len(result) == 0 {
-		// If all failed or significant failure
-		s.handleFailure(activePoints, firstErr)
+		// If all failed
 		return nil, firstErr
 	}
 
@@ -367,7 +390,7 @@ func (s *PointScheduler) buildReadRequest(points []model.Point) (btypes.Multiple
 	return mpd, pointMap, nil
 }
 
-func (s *PointScheduler) readSingleProperties(chunk btypes.MultiplePropertyData, pointMap map[string]model.Point, result map[string]model.Value) {
+func (s *PointScheduler) readSinglePropertiesWithTimeout(chunk btypes.MultiplePropertyData, pointMap map[string]model.Point, result map[string]model.Value, timeout time.Duration) {
 	for _, obj := range chunk.Objects {
 		for _, prop := range obj.Properties {
 			// Construct PropertyData for Single Read
@@ -378,8 +401,8 @@ func (s *PointScheduler) readSingleProperties(chunk btypes.MultiplePropertyData,
 				},
 			}
 
-			// Read
-			resp, err := s.client.ReadProperty(s.targetDevice, pd)
+			// Read with Timeout
+			resp, err := s.client.ReadPropertyWithTimeout(s.targetDevice, pd, timeout)
 
 			if err != nil {
 				log.Printf("[WARN] Fallback ReadProperty failed for %v: %v", obj.ID, err)
