@@ -310,7 +310,27 @@ func (t *ModbusTransport) Connect(ctx context.Context) error {
 			url = fmt.Sprintf("rtu://%s?baudrate=%d&data_bits=%d&parity=%s&stop_bits=%d",
 				port, baudRate, dataBits, parity, stopBits)
 		} else {
+			// Try to get address from config
 			addr, _ := t.cfg.Config["address"].(string)
+			if addr == "" {
+				// Try host and port separately for TCP
+				host, hostOk := t.cfg.Config["host"].(string)
+				portVal, portOk := t.cfg.Config["port"]
+				if hostOk && portOk {
+					portStr := ""
+					switch v := portVal.(type) {
+					case string:
+						portStr = v
+					case float64:
+						portStr = fmt.Sprintf("%d", int(v))
+					case int:
+						portStr = fmt.Sprintf("%d", v)
+					}
+					if portStr != "" {
+						addr = fmt.Sprintf("%s:%s", host, portStr)
+					}
+				}
+			}
 			if addr != "" {
 				url = "tcp://" + addr
 			} else {

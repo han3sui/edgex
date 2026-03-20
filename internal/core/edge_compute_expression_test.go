@@ -220,7 +220,7 @@ func TestEvaluateThreshold(t *testing.T) {
 		},
 		{
 			Name:      "Bit Access Syntax (v.N)",
-			Condition: "v.4 == 1",
+			Condition: "v.5 == 1",
 			Env:       map[string]any{"v": 18},
 			Want:      true,
 			WantErr:   false,

@@ -554,11 +554,8 @@ func (s *PointScheduler) groupPoints(points []model.Point) ([]PointGroup, error)
 
 			i := 0
 			for i < len(infos) {
-				if addrMap != nil && !addrMap.IsAddressValid(slaveID, regType.String(), infos[i].Offset) {
-					i++
-					continue
-				}
-
+				// If address map exists but address is not yet validated, still process it
+				// This allows initial communication to happen while probing is being done
 				currentGroup := PointGroup{
 					RegType:     regType,
 					StartOffset: infos[i].Offset,
@@ -574,10 +571,7 @@ func (s *PointScheduler) groupPoints(points []model.Point) ([]PointGroup, error)
 				for j := i + 1; j < len(infos); j++ {
 					info := infos[j]
 
-					if addrMap != nil && !addrMap.IsAddressValid(slaveID, regType.String(), info.Offset) {
-						continue
-					}
-
+					// Continue processing even if address not yet validated
 					gap := int(info.Offset) - int(currentEndOffset)
 					if gap < 0 {
 						gap = 0

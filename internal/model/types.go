@@ -204,13 +204,13 @@ type ThresholdConfig struct {
 
 // Value represents the standardized output of a collected point
 type Value struct {
-	ChannelID string    `json:"channel_id"`
-	DeviceID  string    `json:"device_id"`
-	PointID   string    `json:"point_id"`
-	Value     any       `json:"value"`
-	Quality   string    `json:"quality"`
-	TS        time.Time `json:"timestamp"`
-	CachedAt  time.Time `json:"cachedAt,omitempty"`
+	ChannelID string         `json:"channel_id"`
+	DeviceID  string         `json:"device_id"`
+	PointID   string         `json:"point_id"`
+	Value     any            `json:"value"`
+	Quality   string         `json:"quality"`
+	TS        time.Time      `json:"timestamp"`
+	CachedAt  time.Time      `json:"cachedAt,omitempty"`
 	Meta      map[string]any `json:"meta,omitempty"`
 }
 
@@ -240,17 +240,17 @@ type DeviceStorage struct {
 
 // Device represents a device configuration (within a channel)
 type Device struct {
-	ID         string         `json:"id" yaml:"id"`
-	Name       string         `json:"name" yaml:"name"`
-	Enable     bool           `json:"enable" yaml:"enable"`
-	Interval   Duration       `json:"interval" yaml:"interval"`
-	DeviceFile string         `json:"device_file,omitempty" yaml:"device_file,omitempty"` // 设备配置文件路径
-	Config     map[string]any `json:"config" yaml:"config"`                               // 设备特定配置（如 slave_id）
-	Storage    DeviceStorage  `json:"storage,omitempty" yaml:"storage,omitempty"`         // Data storage strategy
-	Points     []Point        `json:"points" yaml:"points"`                               // 该设备的点位列表
-	State      int            `json:"state" yaml:"-"`                                     // 运行时状态：0=Online, 1=Unstable, 2=Offline, 3=Quarantine
-	QualityScore int          `json:"quality_score" yaml:"-"`                             // 质量评分 (0-100)
-	StopChan   chan struct{}  `json:"-" yaml:"-"`
+	ID           string         `json:"id" yaml:"id"`
+	Name         string         `json:"name" yaml:"name"`
+	Enable       bool           `json:"enable" yaml:"enable"`
+	Interval     Duration       `json:"interval" yaml:"interval"`
+	DeviceFile   string         `json:"device_file,omitempty" yaml:"device_file,omitempty"` // 设备配置文件路径
+	Config       map[string]any `json:"config" yaml:"config"`                               // 设备特定配置（如 slave_id）
+	Storage      DeviceStorage  `json:"storage,omitempty" yaml:"storage,omitempty"`         // Data storage strategy
+	Points       []Point        `json:"points" yaml:"points"`                               // 该设备的点位列表
+	State        int            `json:"state" yaml:"-"`                                     // 运行时状态：0=Online, 1=Unstable, 2=Offline, 3=Quarantine
+	QualityScore int            `json:"quality_score" yaml:"-"`                             // 质量评分 (0-100)
+	StopChan     chan struct{}  `json:"-" yaml:"-"`
 	// Runtime state fields
 	NodeRuntime *NodeRuntime `json:"runtime,omitempty" yaml:"-"`
 }
@@ -470,4 +470,177 @@ type SouthboundManager interface {
 	GetChannelDevices(channelID string) []Device
 	GetDevice(channelID, deviceID string) *Device
 	WritePoint(channelID, deviceID, pointID string, value any) error
+}
+
+// ProtocolConfig 协议配置
+type ProtocolConfig struct {
+	HeartbeatInterval int `json:"heartbeat_interval"`
+}
+
+// ========== Shadow Device Structures ==========
+
+// ShadowPoint represents a single point in a shadow device
+type ShadowPoint struct {
+	Value          any       `json:"value"`
+	Unit           string    `json:"unit"`
+	RW             string    `json:"rw"` // "r" or "rw"
+	SamplePeriodMs int       `json:"sample_period_ms"`
+	Quality        string    `json:"quality"`
+	Timestamp      time.Time `json:"timestamp"`
+	Version        uint64    `json:"version"`
+}
+
+// ShadowDevice represents a real shadow device (physical device shadow)
+type ShadowDevice struct {
+	ShadowDeviceID   string                 `json:"shadow_device_id"`
+	PhysicalDeviceID string                 `json:"physical_device_id"`
+	ChannelID        string                 `json:"channel_id"`
+	Version          uint64                 `json:"version"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+	Points           map[string]ShadowPoint `json:"points"`
+	// 通信画像相关字段
+	CommunicationProfile *DeviceCommunicationProfile `json:"communication_profile,omitempty"`
+}
+
+// VirtualDevice represents a virtual shadow device with formula-based points
+type VirtualDevice struct {
+	VirtualDeviceID string                 `json:"virtual_device_id"`
+	Version         uint64                 `json:"version"`
+	UpdatedAt       time.Time              `json:"updated_at"`
+	FormulaPoints   map[string]string      `json:"formula_points"` // pointID -> formula
+	Dependencies    []string               `json:"dependencies"`   // list of dependent point keys
+	Points          map[string]ShadowPoint `json:"points"`         // computed values
+}
+
+// WALRecord represents a Write-Ahead Log record
+type WALRecord struct {
+	Offset         uint64    `json:"offset"`
+	EventType      string    `json:"event_type"` // "shadow-write", "virtual-update"
+	ShadowDeviceID string    `json:"shadow_device_id"`
+	Version        uint64    `json:"version"`
+	PayloadHash    string    `json:"payload_hash"`
+	CreatedAt      time.Time `json:"created_at"`
+	Payload        []byte    `json:"payload"` // JSON-encoded data
+}
+
+// ShadowIngressMessage represents the standard message format from Points layer to ShadowIngress
+type ShadowIngressMessage struct {
+	MessageID string               `json:"message_id"`
+	QoS       int                  `json:"qos"` // 0, 1, 2
+	DeviceID  string               `json:"device_id"`
+	ChannelID string               `json:"channel_id"`
+	Timestamp time.Time            `json:"timestamp"`
+	Points    []ShadowIngressPoint `json:"points"`
+	Meta      ShadowIngressMeta    `json:"meta"`
+}
+
+// ShadowIngressPoint represents a single point in the ingress message
+type ShadowIngressPoint struct {
+	PointID        string `json:"point_id"`
+	Value          any    `json:"value"`
+	Unit           string `json:"unit"`
+	Quality        string `json:"quality"`
+	SamplePeriodMs int    `json:"sample_period_ms"`
+}
+
+// ShadowIngressMeta represents metadata in the ingress message
+type ShadowIngressMeta struct {
+	Source   string `json:"source"`
+	Sequence uint64 `json:"sequence"`
+}
+
+// ConsistencyCheckResult represents the result of a consistency check
+type ConsistencyCheckResult struct {
+	Pass          bool              `json:"pass"`
+	DiffPoints    []ShadowDiffPoint `json:"diff_points"`
+	DiffSource    string            `json:"diff_source"`
+	RepairSuggest string            `json:"repair_suggest"`
+}
+
+// ShadowDiffPoint represents a difference found during consistency check
+type ShadowDiffPoint struct {
+	PointID  string `json:"point_id"`
+	Field    string `json:"field"` // "value", "version", "timestamp", "quality"
+	Expected any    `json:"expected"`
+	Actual   any    `json:"actual"`
+}
+
+// ShadowWriteRequest represents a write request to shadow device
+type ShadowWriteRequest struct {
+	ShadowDeviceID string    `json:"shadow_device_id"`
+	PointID        string    `json:"point_id"`
+	Value          any       `json:"value"`
+	QoS            int       `json:"qos"`
+	Timestamp      time.Time `json:"timestamp"`
+}
+
+// ShadowWriteResponse represents a write response from shadow device
+type ShadowWriteResponse struct {
+	Success   bool      `json:"success"`
+	Version   uint64    `json:"version"`
+	Timestamp time.Time `json:"timestamp"`
+	Error     string    `json:"error,omitempty"`
+}
+
+// RTTNode RTT统计节点
+type RTTNode struct {
+	SeqNo     uint16    `json:"seq_no"`
+	SendTS    time.Time `json:"send_ts"`
+	RecvTS    time.Time `json:"recv_ts"`
+	AckStatus bool      `json:"ack_status"`
+	RTT       int64     `json:"rtt"`
+}
+
+// MTUNegotiationRecord MTU协商记录
+type MTUNegotiationRecord struct {
+	AttemptValue int       `json:"attempt_value"`
+	ResponseTime int64     `json:"response_time"`
+	RetryCount   int       `json:"retry_count"`
+	Success      bool      `json:"success"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+// BatchReadSnapshot Batch Read快照
+type BatchReadSnapshot struct {
+	CurrentGap     int     `json:"current_gap"`
+	MaxGap         int     `json:"max_gap"`
+	MergedRequests uint64  `json:"merged_requests"`
+	SavedRequests  uint64  `json:"saved_requests"`
+	FillEfficiency float64 `json:"fill_efficiency"`
+}
+
+// DeviceCommunicationProfile 设备通信画像结构
+type DeviceCommunicationProfile struct {
+	DeviceID              string                 `json:"device_id"`
+	ChannelID             string                 `json:"channel_id"`
+	ProtocolType          string                 `json:"protocol_type"`
+	SlaveID               interface{}            `json:"slave_id"`
+	AvgResponseTime       time.Duration          `json:"avg_response_time"`
+	MaxResponseTime       time.Duration          `json:"max_response_time"`
+	ErrorRate             float64                `json:"error_rate"`
+	StabilityScore        float64                `json:"stability_score"`
+	OptimalTimeout        time.Duration          `json:"optimal_timeout"`
+	OptimalInterval       time.Duration          `json:"optimal_interval"`
+	RetryCount            int                    `json:"retry_count"`
+	BatchSize             int                    `json:"batch_size"`
+	ProtocolParams        map[string]interface{} `json:"protocol_params"`
+	LastUpdated           time.Time              `json:"last_updated"`
+	CollectionSuccessRate float64                `json:"collection_success_rate"`
+	AbnormalPointCount    int                    `json:"abnormal_point_count"`
+	ConsecutiveFailures   int                    `json:"consecutive_failures"`
+	// RTT相关字段
+	RTTSamples      []int64 `json:"rtt_samples"`
+	RTTSampleWindow int     `json:"rtt_sample_window"`
+	EWMARTT         int64   `json:"ewma_rtt"`
+	// MTU相关字段
+	CurrentMTU int `json:"current_mtu"`
+	MaxMTU     int `json:"max_mtu"`
+	MinMTU     int `json:"min_mtu"`
+	// Gap合并相关字段
+	CurrentGap      int `json:"current_gap"`
+	MaxGap          int `json:"max_gap"`
+	GapFillStrategy int `json:"gap_fill_strategy"`
+	// 心跳相关字段
+	HeartbeatInterval int       `json:"heartbeat_interval"`
+	LastActivity      time.Time `json:"last_activity"`
 }

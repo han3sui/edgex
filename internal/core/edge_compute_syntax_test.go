@@ -13,15 +13,15 @@ func TestSyntaxPreprocessing(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"v.4", "bitget(v, 4)"},
-		{"v.bit.4", "bitget(v, 4)"},
-		{"my_var.bit.15", "bitget(my_var, 15)"},
-		{"v.12 > 0", "bitget(v, 12) > 0"},
-		{"t1.0 == 1 && t2.3 == 0", "bitget(t1, 0) == 1 && bitget(t2, 3) == 0"},
-		{"val.4", "bitget(val, 4)"},
-		{"my_var.15", "bitget(my_var, 15)"},
+		{"v.4", "bitget(v, 3)"},
+		{"v.bit.4", "bitget(v, 3)"},
+		{"my_var.bit.15", "bitget(my_var, 14)"},
+		{"v.12 > 0", "bitget(v, 11) > 0"},
+		{"t1.0 == 1 && t2.3 == 0", "bitget(t1, 0) == 1 && bitget(t2, 2) == 0"},
+		{"val.4", "bitget(val, 3)"},
+		{"my_var.15", "bitget(my_var, 14)"},
 		{"3.14", "3.14"}, // Should not change float
-		{"v.4 + v.5", "bitget(v, 4) + bitget(v, 5)"},
+		{"v.4 + v.5", "bitget(v, 3) + bitget(v, 4)"},
 	}
 
 	for _, tt := range tests {
@@ -80,7 +80,7 @@ func TestIntegratedSyntax(t *testing.T) {
 	// Test that v.N syntax works end-to-end via the environment functions
 	// We manually simulate what evaluateThreshold/Calculation does: Preprocess -> Compile -> Run
 
-	rawExpr := "v.4 == 1"
+	rawExpr := "v.5 == 1"
 	processed := preprocessExpression(rawExpr)
 
 	env := map[string]any{

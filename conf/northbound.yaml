@@ -98,7 +98,7 @@ http: []
 opcua:
     - id: opcua-1
       name: Default OPC UA
-      enable: false
+      enable: true
       port: 5050
       endpoint: /test
       security_policy: Auto
@@ -107,17 +107,23 @@ opcua:
       auth_methods:
         - Anonymous
         - UserName
-      users: {}
+      users:
+        admin: admin
       cert_file: ""
       key_file: ""
       devices:
         "3": true
+        LAPTOP-5E3D21EG: false
+        Room_FC_2014_19: false
         Room_FC_2014_2228316: true
         Room_FC_2014_2228317: true
         Room_FC_2014_2228318: false
         Room_FC_2014_2228319: false
         Room_FC_2014_2228320: false
         Room_FC_2014_2228322: false
+        bacnet-16: true
+        bacnet-17: true
+        bacnet-18: true
         bacnet-2228316: false
         bacnet-2228317: false
         bacnet-2228318: false
@@ -133,6 +139,7 @@ opcua:
         slave-2: true
         slave-3: false
         slave-4: false
+        slave-5: true
 sparkplug_b:
     - id: sparkplug-1
       name: Default Sparkplug B

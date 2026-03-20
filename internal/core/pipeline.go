@@ -7,10 +7,11 @@ import (
 
 // DataPipeline handles the flow of collected data
 type DataPipeline struct {
-	mu         sync.Mutex
-	pointBuf   map[string][]model.Value
-	signalChan chan struct{}
-	handlers   []func(model.Value)
+	mu            sync.Mutex
+	pointBuf      map[string][]model.Value
+	signalChan    chan struct{}
+	handlers      []func(model.Value)
+	shadowIngress *ShadowIngress
 }
 
 func NewDataPipeline(bufferSize int) *DataPipeline {
@@ -23,6 +24,12 @@ func NewDataPipeline(bufferSize int) *DataPipeline {
 
 func (dp *DataPipeline) AddHandler(h func(model.Value)) {
 	dp.handlers = append(dp.handlers, h)
+}
+
+func (dp *DataPipeline) SetShadowIngress(si *ShadowIngress) {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	dp.shadowIngress = si
 }
 
 func (dp *DataPipeline) Start() {
@@ -88,7 +95,16 @@ func (dp *DataPipeline) process(val model.Value) {
 	dp.mu.Lock()
 	handlers := make([]func(model.Value), len(dp.handlers))
 	copy(handlers, dp.handlers)
+	shadowIngress := dp.shadowIngress
 	dp.mu.Unlock()
+
+	// Push to Shadow Ingress first (if enabled)
+	if shadowIngress != nil {
+		if err := shadowIngress.Ingest(val); err != nil {
+			// Log error but continue processing
+			// Shadow device is an enhancement, not critical path
+		}
+	}
 
 	// Notify all handlers
 	for _, h := range handlers {

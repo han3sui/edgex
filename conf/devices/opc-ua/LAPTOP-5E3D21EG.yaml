@@ -52,6 +52,28 @@ points:
       scale: 1
       threshold: null
       unit: ""
+    - address: ns=3;i=1002
+      datatype: float64
+      group: ""
+      id: ns=3;i=1002
+      name: ns=3;i=1002
+      offset: 0
+      readwrite: R
+      report_mode: ""
+      scale: 1
+      threshold: null
+      unit: ""
+    - address: ns=3;i=1003
+      datatype: float64
+      group: ""
+      id: ns=3;i=1003
+      name: ns=3;i=1003
+      offset: 0
+      readwrite: R
+      report_mode: ""
+      scale: 1
+      threshold: null
+      unit: ""
 storage:
     enable: false
     interval: 1

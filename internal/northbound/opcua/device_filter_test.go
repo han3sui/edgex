@@ -8,7 +8,7 @@ import (
 func TestServer_DeviceFiltering(t *testing.T) {
 	// Setup Mock Data
 	mockSB := &MockSouthboundManager{
-		Channels: []model.Channel{
+		channels: []model.Channel{
 			{
 				ID:       "ch1",
 				Name:     "Test Channel",

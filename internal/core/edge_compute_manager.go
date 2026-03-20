@@ -827,19 +827,15 @@ func preprocessExpression(input string) string {
 	return bitAccessRegex.ReplaceAllStringFunc(input, func(match string) string {
 		submatches := bitAccessRegex.FindStringSubmatch(match)
 		if len(submatches) == 3 {
-			// Support 1-based indexing: v.1 -> bitget(v, 0)
 			// Parse N
-			if n, err := strconv.Atoi(submatches[2]); err == nil && n > 0 {
-				return fmt.Sprintf("bitget(%s, %d)", submatches[1], n-1)
+			if n, err := strconv.Atoi(submatches[2]); err == nil {
+				// Convert 1-based index to 0-based, but keep 0 as 0
+				bitIndex := n
+				if n > 0 {
+					bitIndex = n - 1
+				}
+				return fmt.Sprintf("bitget(%s, %d)", submatches[1], bitIndex)
 			}
-			// Fallback or 0? If n=0, maybe treat as 0? But user said start from 1.
-			// If v.0, keep as 0? Or invalid?
-			// Let's assume v.0 is invalid or map to -1 (error).
-			// For safety, if n=0, let's just use 0 (so v.0 -> bit 0).
-			// But v.1 -> bit 0. This collision is bad.
-			// Let's stick to user request: "from 1 start counting". So v.1 -> 0.
-			// If input is v.0, we can treat it as bit 0 too?
-			// Let's implement strictly n-1 for n>0.
 			return fmt.Sprintf("bitget(%s, %s)", submatches[1], submatches[2])
 		}
 		return match

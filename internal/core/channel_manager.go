@@ -34,29 +34,39 @@ type ChannelStatus struct {
 
 // ChannelManager 管理所有采集通道及其下的设备
 type ChannelManager struct {
-	channels      map[string]*model.Channel // channel.id -> channel
-	drivers       map[string]drv.Driver     // channel.id -> driver
-	driverMus     map[string]*sync.Mutex    // channel.id -> mutex for driver access
-	pipeline      *DataPipeline
-	stateManager  *CommunicationManageTemplate
-	mu            sync.RWMutex
-	ctx           context.Context
-	cancel        context.CancelFunc
-	saveFunc      func([]model.Channel) error
-	statusHandler func(deviceID string, status int)
+	channels             map[string]*model.Channel // channel.id -> channel
+	drivers              map[string]drv.Driver     // channel.id -> driver
+	driverMus            map[string]*sync.Mutex    // channel.id -> mutex for driver access
+	pipeline             *DataPipeline
+	stateManager         *CommunicationManageTemplate
+	deviceAdapterManager *DeviceAdapterManager
+	protocolRegistry     *ProtocolAdapterRegistry
+	collectionScheduler  *CollectionScheduler
+	mu                   sync.RWMutex
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	saveFunc             func([]model.Channel) error
+	statusHandler        func(deviceID string, status int)
 }
 
 func NewChannelManager(pipeline *DataPipeline, saveFunc func([]model.Channel) error) *ChannelManager {
 	ctx, cancel := context.WithCancel(context.Background())
+	deviceAdapterManager := NewDeviceAdapterManager()
+	protocolRegistry := NewProtocolAdapterRegistry()
+	collectionScheduler := NewCollectionScheduler(deviceAdapterManager, protocolRegistry)
+
 	cm := &ChannelManager{
-		channels:     make(map[string]*model.Channel),
-		drivers:      make(map[string]drv.Driver),
-		driverMus:    make(map[string]*sync.Mutex),
-		pipeline:     pipeline,
-		stateManager: NewCommunicationManageTemplate(),
-		ctx:          ctx,
-		cancel:       cancel,
-		saveFunc:     saveFunc,
+		channels:             make(map[string]*model.Channel),
+		drivers:              make(map[string]drv.Driver),
+		driverMus:            make(map[string]*sync.Mutex),
+		pipeline:             pipeline,
+		stateManager:         NewCommunicationManageTemplate(),
+		deviceAdapterManager: deviceAdapterManager,
+		protocolRegistry:     protocolRegistry,
+		collectionScheduler:  collectionScheduler,
+		ctx:                  ctx,
+		cancel:               cancel,
+		saveFunc:             saveFunc,
 	}
 
 	// Wire state manager events
@@ -822,8 +832,25 @@ func (cm *ChannelManager) collectDevice(dev *model.Device, d drv.Driver, ch *mod
 
 	zap.L().Info("PollStart", zap.String("device", dev.Name), zap.Time("ts", time.Now()))
 
+	// 获取设备适配器
+	adapter := cm.deviceAdapterManager.GetAdapter(dev.ID)
+
+	// 优化采集参数
+	params, err := adapter.OptimizeCollectionParams(dev.ID)
+	if err != nil {
+		zap.L().Warn("Failed to optimize collection parameters", zap.String("device", dev.Name), zap.Error(err))
+	}
+
+	// 根据优化参数设置超时
 	timeout := 5 * time.Second
-	if node.Runtime.State != NodeStateOnline {
+	if rtt, ok := params["rtt"].(int64); ok {
+		timeout = time.Duration(rtt*3) * time.Microsecond
+		if timeout < 1*time.Second {
+			timeout = 1 * time.Second
+		} else if timeout > 10*time.Second {
+			timeout = 10 * time.Second
+		}
+	} else if node.Runtime.State != NodeStateOnline {
 		timeout = 200 * time.Millisecond
 	}
 
@@ -866,12 +893,28 @@ func (cm *ChannelManager) collectDevice(dev *model.Device, d drv.Driver, ch *mod
 		dev.Points[i].DeviceID = dev.ID
 	}
 
-	// 读取点位数据
-	results, err := d.ReadPoints(ctx, dev.Points)
-	if err != nil {
-		zap.L().Error("Error reading from device", zap.String("device", dev.Name), zap.String("channel", ch.Name), zap.Error(err))
-		cm.stateManager.onCollectFail(node)
-		return
+	// 优化批量读取
+	batches := cm.collectionScheduler.OptimizeBatchRead(dev.ID, dev.Points)
+	var allResults []model.Value
+
+	// 批量读取数据
+	for _, batch := range batches {
+		batchStart := time.Now()
+		batchResults, err := d.ReadPoints(ctx, batch)
+		batchDuration := time.Since(batchStart)
+
+		// 更新RTT
+		adapter.UpdateRTT(dev.ID, batchDuration.Microseconds())
+
+		if err != nil {
+			zap.L().Error("Error reading batch from device", zap.String("device", dev.Name), zap.String("channel", ch.Name), zap.Error(err))
+			continue
+		}
+
+		// 将map转换为slice
+		for _, result := range batchResults {
+			allResults = append(allResults, result)
+		}
 	}
 
 	// 统计采集结果
@@ -879,7 +922,7 @@ func (cm *ChannelManager) collectDevice(dev *model.Device, d drv.Driver, ch *mod
 	failCount := 0
 	now := time.Now()
 
-	for _, result := range results {
+	for _, result := range allResults {
 		// 发送到管道
 		val := model.Value{
 			ChannelID: ch.ID,
@@ -902,7 +945,7 @@ func (cm *ChannelManager) collectDevice(dev *model.Device, d drv.Driver, ch *mod
 
 	// 使用 FinalizeCollect 进行状态裁决
 	// 如果有点位但没有结果，视为失败
-	if len(dev.Points) > 0 && len(results) == 0 {
+	if len(dev.Points) > 0 && len(allResults) == 0 {
 		failCount = len(dev.Points) // 假设所有点位都失败
 	}
 
@@ -924,6 +967,23 @@ func (cm *ChannelManager) collectDevice(dev *model.Device, d drv.Driver, ch *mod
 			m.LastCollectTime = now
 			m.State = int(node.Runtime.State)
 		})
+	}
+
+	// 更新设备画像
+	profile, err := adapter.GetDeviceProfile(dev.ID)
+	if err == nil {
+		total := successCount + failCount
+		if total > 0 {
+			profile.CollectionSuccessRate = float64(successCount) / float64(total)
+		}
+		profile.AbnormalPointCount = failCount
+		if failCount == len(dev.Points) && len(dev.Points) > 0 {
+			profile.ConsecutiveFailures++
+		} else {
+			profile.ConsecutiveFailures = 0
+		}
+		profile.LastUpdated = now
+		adapter.UpdateDeviceProfile(profile)
 	}
 
 	collectCtx := &CollectContext{
