@@ -684,43 +684,44 @@ func (cm *ChannelManager) GetDevicePoints(channelID, deviceID string) ([]model.P
 	return points, nil
 }
 
-// deviceLoop 设备采集循环
-func (cm *ChannelManager) deviceLoop(dev *model.Device, d drv.Driver, ch *model.Channel) {
+// validateDeviceInterval 验证设备采集间隔
+func (cm *ChannelManager) validateDeviceInterval(dev *model.Device) (time.Duration, bool) {
 	// 检查设备是否为 nil
 	if dev == nil {
-		zap.L().Error("Device is nil in deviceLoop")
-		return
+		zap.L().Error("Device is nil in validateDeviceInterval")
+		return 0, false
 	}
 
 	// 检查设备名称是否为空
 	if dev.Name == "" {
-		zap.L().Error("Device name is empty in deviceLoop")
-		return
+		zap.L().Error("Device name is empty in validateDeviceInterval")
+		return 0, false
 	}
 
 	// 检查设备采集间隔是否为正数
 	if dev.Interval <= 0 {
 		zap.L().Warn("Device interval must be positive", zap.String("device", dev.Name), zap.Duration("interval", time.Duration(dev.Interval)))
-		return
+		return 0, false
 	}
 
-	// 再次检查，确保 interval 是正数
+	// 转换为时间间隔
 	interval := time.Duration(dev.Interval)
-	if interval <= 0 {
-		zap.L().Warn("Device interval must be positive after conversion", zap.String("device", dev.Name), zap.Duration("interval", interval))
-		return
-	}
-
-	// 最后一次检查，确保 interval 是正数
-	if interval <= 0 {
-		zap.L().Error("Fatal: Device interval is non-positive", zap.String("device", dev.Name), zap.Duration("interval", interval))
-		return
-	}
 
 	// 确保 interval 至少为 1 纳秒
 	if interval < time.Nanosecond {
 		interval = time.Nanosecond
 		zap.L().Warn("Device interval is too small, setting to 1ns", zap.String("device", dev.Name), zap.Duration("interval", interval))
+	}
+
+	return interval, true
+}
+
+// deviceLoop 设备采集循环
+func (cm *ChannelManager) deviceLoop(dev *model.Device, d drv.Driver, ch *model.Channel) {
+	// 验证设备间隔
+	interval, valid := cm.validateDeviceInterval(dev)
+	if !valid {
+		return
 	}
 
 	ticker := time.NewTicker(interval)
