@@ -47,12 +47,12 @@ service.interceptors.response.use(
     console.log('[Response] Full response:', response)
     // Check if response.data is an object with code field
     if (response.data && typeof response.data === 'object' && 'code' in response.data) {
-      // If code is 0, return the data field
-      if (response.data.code === 0) {
-        return response.data.data
+      // If code is 0 (as string or number), return the full response
+      if (response.data.code === '0' || response.data.code === 0) {
+        return response.data
       }
       // If code is not 0, reject with error
-      return Promise.reject(new Error(response.data.message || 'Unknown error'))
+      return Promise.reject(new Error(response.data.message || response.data.msg || 'Unknown error'))
     }
     // Otherwise, return the data as is
     return response.data

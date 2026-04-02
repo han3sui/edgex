@@ -55,11 +55,41 @@
       </a-row>
     </a-card-body>
   </a-card>
+
+  <!-- 重启确认弹窗 -->
+  <a-modal
+    v-model:visible="restartModalVisible"
+    title="重启系统"
+    ok-text="确认重启"
+    cancel-text="取消"
+    status="warning"
+    @ok="handleRestart"
+  >
+    <div class="modal-content">
+      <p class="modal-message">确定要重启系统吗？</p>
+      <p class="modal-warning">服务将暂时不可用，重启过程可能需要几分钟时间。</p>
+    </div>
+  </a-modal>
+
+  <!-- 恢复出厂设置确认弹窗 -->
+  <a-modal
+    v-model:visible="resetModalVisible"
+    title="恢复出厂设置"
+    ok-text="确认恢复"
+    cancel-text="取消"
+    status="danger"
+    @ok="handleReset"
+  >
+    <div class="modal-content">
+      <p class="modal-message">确定要恢复出厂设置吗？</p>
+      <p class="modal-warning">此操作将清除所有配置且无法撤销。系统将恢复到初始状态。</p>
+    </div>
+  </a-modal>
 </template>
 
 <script setup>
 import { ref } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import {
   IconSettings,
   IconCheckCircleFill,
@@ -67,34 +97,69 @@ import {
   IconDelete
 } from '@arco-design/web-vue/es/icon'
 
+const restartModalVisible = ref(false)
+const resetModalVisible = ref(false)
+
 const showRestartConfirm = () => {
-  if (confirm('确定要重启系统吗？服务将暂时不可用。')) {
-    Message.loading({
-      content: '正在重启系统...',
-      duration: 0
-    })
-    // 这里可以添加实际的重启逻辑
-    setTimeout(() => {
-      Message.success('系统重启指令已发送')
-    }, 2000)
-  }
+  restartModalVisible.value = true
 }
 
 const showResetConfirm = () => {
-  if (confirm('确定要恢复出厂设置吗？此操作将清除所有配置且无法撤销。')) {
-    Message.loading({
-      content: '正在恢复出厂设置...',
-      duration: 0
-    })
-    // 这里可以添加实际的重置逻辑
-    setTimeout(() => {
-      Message.success('出厂设置恢复指令已发送')
-    }, 2000)
-  }
+  resetModalVisible.value = true
+}
+
+const handleRestart = () => {
+  Message.loading({
+    content: '正在重启系统...',
+    duration: 0
+  })
+  // 这里可以添加实际的重启逻辑
+  setTimeout(() => {
+    Message.success('系统重启指令已发送')
+  }, 2000)
+  restartModalVisible.value = false
+}
+
+const handleReset = () => {
+  Message.loading({
+    content: '正在恢复出厂设置...',
+    duration: 0
+  })
+  // 这里可以添加实际的重置逻辑
+  setTimeout(() => {
+    Message.success('出厂设置恢复指令已发送')
+  }, 2000)
+  resetModalVisible.value = false
 }
 </script>
 
 <style scoped>
+.modal-content {
+  padding: 16px 0;
+}
+
+.modal-message {
+  font-size: 16px;
+  font-weight: 500;
+  color: #111827;
+  margin-bottom: 12px;
+}
+
+.modal-warning {
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.dark-theme .modal-message {
+  color: #f9fafb;
+}
+
+.dark-theme .modal-warning {
+  color: #d1d5db;
+}
+
+/* Original styles */
 .system-maintenance-card {
   border-radius: 12px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);

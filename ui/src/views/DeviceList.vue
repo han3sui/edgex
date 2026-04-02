@@ -357,7 +357,7 @@
           <a-text v-if="isScanning" type="secondary" style="line-height: 32px;">{{ scanStatus }}</a-text>
         </a-space>
         
-        <a-progress v-if="isScanning" :percent="scanProgress" :status="'active'" :stroke-width="8" />
+
         
         <a-table 
           :columns="scanColumns" 
@@ -817,7 +817,7 @@ const selectAllScan = ref(false)
 const isAddingDevices = ref(false)
 const interfaces = ref([])
 const scanInterface = ref(null)
-const scanProgress = ref(0)
+
 const scanStatus = ref('')
 const scanTimeout = ref(null)
 
@@ -854,7 +854,6 @@ const scanDevices = async () => {
   isScanning.value = true
   scanResults.value = []
   selectedScanDevices.value = []
-  scanProgress.value = 0
   scanStatus.value = '正在准备扫描...'
   
   let stopMessage = null
@@ -872,13 +871,8 @@ const scanDevices = async () => {
     clearInterval(scanTimeout.value)
   }
   
-  // 模拟进度更新
+  // 模拟状态更新
   scanTimeout.value = setInterval(() => {
-    if (scanProgress.value < 90) {
-      scanProgress.value += Math.random() * 10
-      if (scanProgress.value > 90) scanProgress.value = 90
-    }
-    
     const elapsed = Math.round((Date.now() - startTime) / 1000)
     if (elapsed < 3) {
       scanStatus.value = '正在初始化扫描...'
@@ -913,13 +907,12 @@ const scanDevices = async () => {
     
     // 计算扫描耗时
     const scanTime = Math.round((Date.now() - startTime) / 1000)
-    scanProgress.value = 100
     scanStatus.value = '扫描完成'
     
     // 处理后端响应格式 - 后端直接返回设备数组
     scanResults.value = Array.isArray(res) ? res : (res.devices || [])
-    if (stopMessage && typeof stopMessage === 'function') {
-      stopMessage()
+    if (stopMessage && typeof stopMessage === 'object' && typeof stopMessage.close === 'function') {
+      stopMessage.close()
       stopMessage = null
     }
     Message.success({
@@ -928,8 +921,8 @@ const scanDevices = async () => {
     })
   } catch (e) {
     console.error('扫描失败:', e)
-    if (stopMessage && typeof stopMessage === 'function') {
-      stopMessage()
+    if (stopMessage && typeof stopMessage === 'object' && typeof stopMessage.close === 'function') {
+      stopMessage.close()
       stopMessage = null
     }
     if (e.code === 'ECONNABORTED') {
@@ -948,12 +941,11 @@ const scanDevices = async () => {
       clearInterval(scanTimeout.value)
       scanTimeout.value = null
     }
-    if (stopMessage && typeof stopMessage === 'function') {
-      stopMessage()
+    if (stopMessage && typeof stopMessage === 'object' && typeof stopMessage.close === 'function') {
+      stopMessage.close()
       stopMessage = null
     }
     isScanning.value = false
-    scanProgress.value = 0
     scanStatus.value = ''
   }
 }
