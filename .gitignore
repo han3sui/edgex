@@ -2,3 +2,4 @@
 /ui/node_modules
 /logs
 /test
+__debug_bin*
