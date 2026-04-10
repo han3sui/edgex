@@ -53,6 +53,15 @@
           @delete="deleteProtocol"
         />
       </div>
+      <div v-if="config.iot_platform && config.iot_platform.length > 0" class="channel-item">
+        <NorthboundIotPlatform
+          :items="config.iot_platform"
+          :connection-status="config.status"
+          @settings="openIotPlatformSettings"
+          @stats="openIotPlatformStats"
+          @delete="deleteProtocol"
+        />
+      </div>
     </div>
 
     <a-modal v-model:visible="addDialogVisible" title="选择上行协议" :width="480" :footer="false" unmount-on-close>
@@ -75,6 +84,11 @@
         <a-list-item @click="addProtocol('opcua')" style="cursor: pointer">
           <a-list-item-meta title="OPC UA 服务端" description="OPC UA Server，供 SCADA/MES 采集">
             <template #avatar><icon-storage :size="24" style="color: #722ed1" /></template>
+          </a-list-item-meta>
+        </a-list-item>
+        <a-list-item @click="addProtocol('iot_platform')" style="cursor: pointer">
+          <a-list-item-meta title="IoT 平台对接" description="连接 IoT 平台，接收配置下发并上报采集数据">
+            <template #avatar><icon-apps :size="24" style="color: #f59e0b" /></template>
           </a-list-item-meta>
         </a-list-item>
       </a-list>
@@ -106,6 +120,18 @@
       :config="sparkplugEditConfig"
       :all-devices="allDevices"
       @saved="fetchConfig"
+    />
+
+    <IotPlatformSettingsDialog
+      v-model="iotPlatformDialogVisible"
+      :config="iotPlatformEditConfig"
+      @saved="fetchConfig"
+    />
+
+    <StatsDialog
+      v-model="iotPlatformStatsVisible"
+      type="iot-platform"
+      :item-id="iotPlatformStatsId"
     />
 
     <MqttHelpDialog
@@ -140,7 +166,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { IconPlus, IconCloud, IconUpload, IconSwap, IconStorage } from '@arco-design/web-vue/es/icon'
+import { IconPlus, IconCloud, IconUpload, IconSwap, IconStorage, IconApps } from '@arco-design/web-vue/es/icon'
 import { showMessage } from '@/composables/useGlobalState'
 import request from '@/utils/request'
 
@@ -148,16 +174,18 @@ import NorthboundMqtt from '@/components/northbound/NorthboundMqtt.vue'
 import NorthboundHttp from '@/components/northbound/NorthboundHttp.vue'
 import NorthboundOpcua from '@/components/northbound/NorthboundOpcua.vue'
 import NorthboundSparkplug from '@/components/northbound/NorthboundSparkplug.vue'
+import NorthboundIotPlatform from '@/components/northbound/NorthboundIotPlatform.vue'
 import MqttSettingsDialog from '@/components/northbound/MqttSettingsDialog.vue'
 import HttpSettingsDialog from '@/components/northbound/HttpSettingsDialog.vue'
 import OpcuaSettingsDialog from '@/components/northbound/OpcuaSettingsDialog.vue'
 import SparkplugSettingsDialog from '@/components/northbound/SparkplugSettingsDialog.vue'
+import IotPlatformSettingsDialog from '@/components/northbound/IotPlatformSettingsDialog.vue'
 import MqttHelpDialog from '@/components/northbound/MqttHelpDialog.vue'
 import OpcuaHelpDialog from '@/components/northbound/OpcuaHelpDialog.vue'
 import StatsDialog from '@/components/northbound/StatsDialog.vue'
 
 const loading = ref(false)
-const config = ref({ mqtt: [], http: [], opcua: [], sparkplug_b: [], status: {} })
+const config = ref({ mqtt: [], http: [], opcua: [], sparkplug_b: [], iot_platform: [], status: {} })
 const allDevices = ref([])
 
 const hasNoChannels = computed(() => {
@@ -165,7 +193,8 @@ const hasNoChannels = computed(() => {
   return (!c.mqtt || c.mqtt.length === 0) &&
     (!c.http || c.http.length === 0) &&
     (!c.opcua || c.opcua.length === 0) &&
-    (!c.sparkplug_b || c.sparkplug_b.length === 0)
+    (!c.sparkplug_b || c.sparkplug_b.length === 0) &&
+    (!c.iot_platform || c.iot_platform.length === 0)
 })
 
 const addDialogVisible = ref(false)
@@ -174,11 +203,16 @@ const mqttDialogVisible = ref(false)
 const httpDialogVisible = ref(false)
 const opcuaDialogVisible = ref(false)
 const sparkplugDialogVisible = ref(false)
+const iotPlatformDialogVisible = ref(false)
 
 const mqttEditConfig = ref(null)
 const httpEditConfig = ref(null)
 const opcuaEditConfig = ref(null)
 const sparkplugEditConfig = ref(null)
+const iotPlatformEditConfig = ref(null)
+
+const iotPlatformStatsVisible = ref(false)
+const iotPlatformStatsId = ref('')
 
 const mqttHelpVisible = ref(false)
 const mqttHelpData = ref({ topic: '', subscribe_topic: '', write_response_topic: '', status_topic: '', online_payload: '', offline_payload: '' })
@@ -201,6 +235,7 @@ const fetchConfig = async () => {
       http: data.http || [],
       opcua: data.opcua || [],
       sparkplug_b: data.sparkplug_b || [],
+      iot_platform: data.iot_platform || [],
       status: data.status || {}
     }
   } catch (e) {
@@ -230,6 +265,7 @@ const addProtocol = (type) => {
   else if (type === 'http') openHttpSettings(null)
   else if (type === 'sparkplug_b') openSparkplugBSettings(null)
   else if (type === 'opcua') openOpcuaSettings(null)
+  else if (type === 'iot_platform') openIotPlatformSettings(null)
 }
 
 const openMqttSettings = async (item) => {
@@ -254,6 +290,16 @@ const openSparkplugBSettings = async (item) => {
   await fetchAllDevices()
   sparkplugEditConfig.value = item ? JSON.parse(JSON.stringify(item)) : null
   sparkplugDialogVisible.value = true
+}
+
+const openIotPlatformSettings = (item) => {
+  iotPlatformEditConfig.value = item ? JSON.parse(JSON.stringify(item)) : null
+  iotPlatformDialogVisible.value = true
+}
+
+const openIotPlatformStats = (item) => {
+  iotPlatformStatsId.value = item.id
+  iotPlatformStatsVisible.value = true
 }
 
 const openMqttHelp = (item) => {

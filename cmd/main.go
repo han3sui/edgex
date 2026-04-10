@@ -105,6 +105,10 @@ func main() {
 	// Init System Manager
 	sm := core.NewSystemManager(cfg, *confDir)
 
+	// Init System Monitor (real OS-level metrics)
+	sysmon := core.NewSysMonitor()
+	sysmon.Start(5 * time.Second)
+
 	// Init Device Storage Manager
 	dsm := core.NewDeviceStorageManager(store, pipeline)
 	// Initialize with loaded config
@@ -115,7 +119,7 @@ func main() {
 	}
 
 	// 4. Init Web Server
-	srv := server.NewServer(cm, store, pipeline, nbm, ecm, sm, dsm, logBroadcaster)
+	srv := server.NewServer(cm, store, pipeline, nbm, ecm, sm, sysmon, dsm, logBroadcaster)
 
 	// Register pipeline handler for WebSocket broadcast
 	pipeline.AddHandler(func(v model.Value) {
@@ -145,6 +149,11 @@ func main() {
 	// Start Northbound Manager (after channels are loaded so OPC UA can build address space)
 	nbm.Start()
 	defer nbm.Stop()
+
+	// Wire system metrics to northbound reporting
+	sysmon.Subscribe(func(m core.SystemMetrics) {
+		nbm.PublishSystemMetrics(m)
+	})
 
 	// 6. Start Web Server
 	go func() {

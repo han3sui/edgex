@@ -1,6 +1,6 @@
 <template>
   <a-modal v-model:visible="visible" :title="title" :width="900" :footer="false" unmount-on-close>
-    <template v-if="type === 'mqtt'">
+    <template v-if="type === 'mqtt' || type === 'iot-platform'">
       <a-row :gutter="16" style="margin-bottom: 16px">
         <a-col :span="6">
           <a-card :bordered="true" style="text-align: center">
@@ -61,7 +61,7 @@
     <a-divider style="margin: 12px 0" />
 
     <div style="display: flex; align-items: center; margin-bottom: 8px">
-      <span style="font-size: 13px; font-weight: 600">实时日志 ({{ type === 'mqtt' ? 'MQTT' : 'OPC UA' }})</span>
+      <span style="font-size: 13px; font-weight: 600">实时日志 ({{ type === 'mqtt' ? 'MQTT' : type === 'iot-platform' ? 'IoT 平台' : 'OPC UA' }})</span>
       <div style="flex: 1" />
       <a-switch v-model="isStreaming" size="small" style="margin-right: 8px" />
       <span style="font-size: 12px; color: #6b7280; margin-right: 16px">实时滚动</span>
@@ -111,7 +111,11 @@ const page = ref(1)
 let timer = null
 let ws = null
 
-const title = computed(() => props.type === 'mqtt' ? 'MQTT 运行监控' : 'OPC UA 运行监控')
+const title = computed(() => {
+  if (props.type === 'mqtt') return 'MQTT 运行监控'
+  if (props.type === 'iot-platform') return 'IoT 平台运行监控'
+  return 'OPC UA 运行监控'
+})
 
 const paginatedLogs = computed(() => {
   const start = (page.value - 1) * 20
@@ -176,7 +180,8 @@ const connectWs = () => {
     if (!isStreaming.value) return
     try {
       const log = JSON.parse(event.data)
-      const component = props.type === 'mqtt' ? 'mqtt-client' : 'opcua-server'
+      const componentMap = { 'mqtt': 'mqtt-client', 'iot-platform': 'iot-platform', 'opcua': 'opcua-server' }
+      const component = componentMap[props.type] || 'mqtt-client'
       if (log.component === component) {
         logs.value.unshift(log)
         if (logs.value.length > 500) logs.value.pop()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"edge-gateway/internal/model"
 	"edge-gateway/internal/northbound/http"
+	"edge-gateway/internal/northbound/iotplatform"
 	"edge-gateway/internal/northbound/mqtt"
 	"edge-gateway/internal/northbound/opcua"
 	"edge-gateway/internal/northbound/sparkplugb"
@@ -21,36 +22,38 @@ type NorthboundStatus struct {
 }
 
 type NorthboundManager struct {
-	config           model.NorthboundConfig
-	mqttClients      map[string]*mqtt.Client
-	httpClients      map[string]*http.Client
-	opcuaServers     map[string]*opcua.Server
-	sparkplugClients map[string]*sparkplugb.Client
-	pipeline         *DataPipeline
-	sb               model.SouthboundManager
-	cm               *ChannelManager // Reference to ChannelManager for device lookups
-	storage          *storage.Storage
-	ctx              context.Context
-	cancel           context.CancelFunc
-	saveFunc         func(model.NorthboundConfig) error
-	mu               sync.RWMutex
+	config              model.NorthboundConfig
+	mqttClients         map[string]*mqtt.Client
+	httpClients         map[string]*http.Client
+	opcuaServers        map[string]*opcua.Server
+	sparkplugClients    map[string]*sparkplugb.Client
+	iotPlatformClients  map[string]*iotplatform.Client
+	pipeline            *DataPipeline
+	sb                  model.SouthboundManager
+	cm                  *ChannelManager
+	storage             *storage.Storage
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	saveFunc            func(model.NorthboundConfig) error
+	mu                  sync.RWMutex
 }
 
 func NewNorthboundManager(cfg model.NorthboundConfig, pipeline *DataPipeline, sb model.SouthboundManager, s *storage.Storage, saveFunc func(model.NorthboundConfig) error) *NorthboundManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &NorthboundManager{
-		config:           cfg,
-		mqttClients:      make(map[string]*mqtt.Client),
-		httpClients:      make(map[string]*http.Client),
-		opcuaServers:     make(map[string]*opcua.Server),
-		sparkplugClients: make(map[string]*sparkplugb.Client),
-		pipeline:         pipeline,
-		sb:               sb,
-		cm:               nil, // Set via SetChannelManager
-		storage:          s,
-		ctx:              ctx,
-		cancel:           cancel,
-		saveFunc:         saveFunc,
+		config:             cfg,
+		mqttClients:        make(map[string]*mqtt.Client),
+		httpClients:        make(map[string]*http.Client),
+		opcuaServers:       make(map[string]*opcua.Server),
+		sparkplugClients:   make(map[string]*sparkplugb.Client),
+		iotPlatformClients: make(map[string]*iotplatform.Client),
+		pipeline:           pipeline,
+		sb:                 sb,
+		cm:                 nil, // Set via SetChannelManager
+		storage:            s,
+		ctx:                ctx,
+		cancel:             cancel,
+		saveFunc:           saveFunc,
 	}
 }
 
@@ -104,6 +107,22 @@ func (nm *NorthboundManager) GetNorthboundStats() []NorthboundStatus {
 			ID:     cfg.ID,
 			Name:   cfg.Name,
 			Type:   "SparkplugB",
+			Status: status,
+		})
+	}
+
+	// IoT Platform
+	for _, cfg := range nm.config.IotPlatform {
+		status := "Stopped"
+		if !cfg.Enable {
+			status = "Disabled"
+		} else if _, ok := nm.iotPlatformClients[cfg.ID]; ok {
+			status = "Running"
+		}
+		stats = append(stats, NorthboundStatus{
+			ID:     cfg.ID,
+			Name:   cfg.Name,
+			Type:   "IotPlatform",
 			Status: status,
 		})
 	}
@@ -164,6 +183,19 @@ func (nm *NorthboundManager) Start() {
 		}
 	}
 
+	// Start IoT Platform Clients
+	for _, cfg := range nm.config.IotPlatform {
+		if cfg.Enable {
+			client := iotplatform.NewClient(cfg, nm.cm)
+			if err := client.Start(); err != nil {
+				log.Printf("Failed to start IoT Platform client [%s]: %v", cfg.Name, err)
+			} else {
+				log.Printf("Northbound IoT Platform client [%s] started", cfg.Name)
+				nm.iotPlatformClients[cfg.ID] = client
+			}
+		}
+	}
+
 	// Subscribe to pipeline
 	nm.pipeline.AddHandler(nm.handleValue)
 }
@@ -180,6 +212,57 @@ func (nm *NorthboundManager) handleValue(v model.Value) {
 	}
 	for _, client := range nm.sparkplugClients {
 		client.Publish(v)
+	}
+	for _, client := range nm.iotPlatformClients {
+		client.Publish(v)
+	}
+}
+
+// PublishSystemMetrics distributes system metrics to all northbound channels that support it.
+func (nm *NorthboundManager) PublishSystemMetrics(metrics SystemMetrics) {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+
+	metricsMap := map[string]any{
+		"cpu_usage":      metrics.CPUUsage,
+		"cpu_cores":      metrics.CPUCores,
+		"memory_total":   int64(metrics.MemoryTotal / 1024 / 1024), // MB
+		"memory_used":    int64(metrics.MemoryUsed / 1024 / 1024),  // MB
+		"memory_percent": metrics.MemoryPercent,
+		"disk_total":     int64(metrics.DiskTotal / 1024 / 1024),   // MB
+		"disk_used":      int64(metrics.DiskUsed / 1024 / 1024),    // MB
+		"disk_percent":   metrics.DiskPercent,
+		"disk_free":      int64(metrics.DiskFree / 1024 / 1024),    // MB
+		"goroutines":     metrics.GoRoutines,
+		"uptime":         metrics.Uptime,
+		"system_uptime":  int64(metrics.SystemUptime),
+		"net_send_rate":  metrics.NetSendRate / 1024, // KB/s
+		"net_recv_rate":  metrics.NetRecvRate / 1024, // KB/s
+	}
+	if metrics.WiFi != nil {
+		metricsMap["wifi_ssid"] = metrics.WiFi.SSID
+		metricsMap["wifi_signal"] = metrics.WiFi.Signal
+		metricsMap["wifi_quality"] = metrics.WiFi.Quality
+		metricsMap["wifi_connected"] = metrics.WiFi.Connected
+	}
+	if metrics.Cellular != nil {
+		metricsMap["cell_operator"] = metrics.Cellular.Operator
+		metricsMap["cell_technology"] = metrics.Cellular.Technology
+		metricsMap["cell_signal_pct"] = metrics.Cellular.SignalPct
+		metricsMap["cell_rsrp"] = metrics.Cellular.RSRP
+		metricsMap["cell_rsrq"] = metrics.Cellular.RSRQ
+		metricsMap["cell_sinr"] = metrics.Cellular.SINR
+		metricsMap["cell_connected"] = metrics.Cellular.Connected
+	}
+
+	// IoT Platform clients
+	for _, client := range nm.iotPlatformClients {
+		client.PublishSystemMetrics(metricsMap)
+	}
+
+	// MQTT clients – publish as a special system topic
+	for _, client := range nm.mqttClients {
+		client.PublishSystemMetrics(metricsMap)
 	}
 }
 
@@ -271,6 +354,9 @@ func (nm *NorthboundManager) Stop() {
 	for _, client := range nm.sparkplugClients {
 		client.Stop()
 	}
+	for _, client := range nm.iotPlatformClients {
+		client.Stop()
+	}
 }
 
 func (nm *NorthboundManager) GetConfig() model.NorthboundConfig {
@@ -283,6 +369,9 @@ func (nm *NorthboundManager) GetConfig() model.NorthboundConfig {
 		status[id] = client.GetStatus()
 	}
 	for id, client := range nm.sparkplugClients {
+		status[id] = client.GetStatus()
+	}
+	for id, client := range nm.iotPlatformClients {
 		status[id] = client.GetStatus()
 	}
 	// OPC UA status usually implies running if in the map
@@ -478,6 +567,9 @@ func (nm *NorthboundManager) UpdateConfig(newConfig model.NorthboundConfig) {
 
 	// 处理 SparkplugB 配置变更
 	nm.updateSparkplugBClients(oldConfig.SparkplugB, newConfig.SparkplugB)
+
+	// 处理 IoT Platform 配置变更
+	nm.updateIotPlatformClients(oldConfig.IotPlatform, newConfig.IotPlatform)
 }
 
 // updateMQTTClients 更新 MQTT 客户端
@@ -647,6 +739,122 @@ func (nm *NorthboundManager) updateSparkplugBClients(oldConfigs, newConfigs []mo
 				} else {
 					log.Printf("Northbound Sparkplug B client [%s] started", newCfg.Name)
 					nm.sparkplugClients[newCfg.ID] = client
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IoT Platform operations
+// ---------------------------------------------------------------------------
+
+func (nm *NorthboundManager) UpsertIotPlatformConfig(cfg model.IotPlatformConfig) error {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+
+	found := false
+	for i, c := range nm.config.IotPlatform {
+		if c.ID == cfg.ID {
+			nm.config.IotPlatform[i] = cfg
+			found = true
+			break
+		}
+	}
+	if !found {
+		nm.config.IotPlatform = append(nm.config.IotPlatform, cfg)
+	}
+
+	if err := nm.saveConfig(); err != nil {
+		return err
+	}
+
+	client, exists := nm.iotPlatformClients[cfg.ID]
+
+	if !cfg.Enable {
+		if exists {
+			client.Stop()
+			delete(nm.iotPlatformClients, cfg.ID)
+		}
+		return nil
+	}
+
+	if !exists {
+		newClient := iotplatform.NewClient(cfg, nm.cm)
+		if err := newClient.Start(); err != nil {
+			return fmt.Errorf("failed to start IoT Platform client: %w", err)
+		}
+		nm.iotPlatformClients[cfg.ID] = newClient
+	} else {
+		return client.UpdateConfig(cfg)
+	}
+
+	return nil
+}
+
+func (nm *NorthboundManager) DeleteIotPlatformConfig(id string) error {
+	nm.mu.Lock()
+	defer nm.mu.Unlock()
+
+	if client, exists := nm.iotPlatformClients[id]; exists {
+		client.Stop()
+		delete(nm.iotPlatformClients, id)
+	}
+
+	newConfigs := []model.IotPlatformConfig{}
+	for _, c := range nm.config.IotPlatform {
+		if c.ID != id {
+			newConfigs = append(newConfigs, c)
+		}
+	}
+	nm.config.IotPlatform = newConfigs
+
+	return nm.saveConfig()
+}
+
+func (nm *NorthboundManager) GetIotPlatformStats(id string) (iotplatform.ClientStats, error) {
+	nm.mu.RLock()
+	defer nm.mu.RUnlock()
+
+	if client, ok := nm.iotPlatformClients[id]; ok {
+		return client.GetStats(), nil
+	}
+	return iotplatform.ClientStats{}, fmt.Errorf("IoT Platform client %s not found or not running", id)
+}
+
+// updateIotPlatformClients handles hot-reload of IoT platform configs.
+func (nm *NorthboundManager) updateIotPlatformClients(oldConfigs, newConfigs []model.IotPlatformConfig) {
+	for _, oldCfg := range oldConfigs {
+		if client, exists := nm.iotPlatformClients[oldCfg.ID]; exists {
+			found := false
+			for _, newCfg := range newConfigs {
+				if newCfg.ID == oldCfg.ID {
+					found = true
+					if !newCfg.Enable {
+						client.Stop()
+						delete(nm.iotPlatformClients, oldCfg.ID)
+					}
+					break
+				}
+			}
+			if !found {
+				client.Stop()
+				delete(nm.iotPlatformClients, oldCfg.ID)
+			}
+		}
+	}
+
+	for _, newCfg := range newConfigs {
+		if newCfg.Enable {
+			if client, exists := nm.iotPlatformClients[newCfg.ID]; exists {
+				client.UpdateConfig(newCfg)
+			} else {
+				client := iotplatform.NewClient(newCfg, nm.cm)
+				if err := client.Start(); err != nil {
+					log.Printf("Failed to start IoT Platform client [%s]: %v", newCfg.Name, err)
+				} else {
+					log.Printf("Northbound IoT Platform client [%s] started", newCfg.Name)
+					nm.iotPlatformClients[newCfg.ID] = client
 				}
 			}
 		}

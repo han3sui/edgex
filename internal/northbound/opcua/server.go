@@ -24,6 +24,9 @@ import (
 
 	"github.com/awcullen/opcua/server"
 	"github.com/awcullen/opcua/ua"
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/mem"
 	"go.uber.org/zap"
 )
 
@@ -434,6 +437,7 @@ func (s *Server) buildAddressSpace() error {
 	s.mu.Lock()
 	s.nodeMap["System/CPUUsage"] = createVar(infoID, "Gateway/Info/CPUUsage", "CPUUsage", 0.0, s.getDataTypeID("double"), 1, nil)
 	s.nodeMap["System/MemoryUsage"] = createVar(infoID, "Gateway/Info/MemoryUsage", "MemoryUsage", 0.0, s.getDataTypeID("double"), 1, nil)
+	s.nodeMap["System/DiskUsage"] = createVar(infoID, "Gateway/Info/DiskUsage", "DiskUsage", 0.0, s.getDataTypeID("double"), 1, nil)
 	s.nodeMap["System/Goroutines"] = createVar(infoID, "Gateway/Info/Goroutines", "Goroutines", int32(0), s.getDataTypeID("int32"), 1, nil)
 	s.nodeMap["System/Uptime"] = createVar(infoID, "Gateway/Info/Uptime", "Uptime", int64(0), s.getDataTypeID("int64"), 1, nil)
 	s.nodeMap["System/ClientCount"] = createVar(infoID, "Gateway/Info/ClientCount", "ClientCount", int32(0), s.getDataTypeID("int32"), 1, nil)
@@ -582,23 +586,36 @@ func (s *Server) systemInfoLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			var mem runtime.MemStats
-			runtime.ReadMemStats(&mem)
-			s.updateSystemNode("MemoryUsage", float64(mem.Alloc)/1024/1024)
+			// Real CPU usage via gopsutil
+			if pcts, err := cpu.PercentWithContext(ctx, 0, false); err == nil && len(pcts) > 0 {
+				s.updateSystemNode("CPUUsage", pcts[0])
+			}
+
+			// Real memory (whole machine)
+			if vm, err := mem.VirtualMemoryWithContext(ctx); err == nil {
+				s.updateSystemNode("MemoryUsage", vm.UsedPercent)
+			}
+
+			// Real disk
+			rootPath := "/"
+			if runtime.GOOS == "windows" {
+				rootPath = "C:\\"
+			}
+			if du, err := disk.UsageWithContext(ctx, rootPath); err == nil {
+				s.updateSystemNode("DiskUsage", du.UsedPercent)
+			}
+
 			s.updateSystemNode("Goroutines", int32(runtime.NumGoroutine()))
 
 			uptime := int64(time.Since(startTime).Seconds())
 			s.updateSystemNode("Uptime", uptime)
 
-			// Update Client Count
 			clientCount := s.getClientCount()
 			s.updateSystemNode("ClientCount", int32(clientCount))
 
-			// Update internal stats
 			s.mu.Lock()
 			s.stats.ClientCount = clientCount
 			s.stats.Uptime = uptime
-			// WriteCount and SubscriptionCount are currently 0 or updated elsewhere (if we could hook them)
 			s.mu.Unlock()
 		}
 	}

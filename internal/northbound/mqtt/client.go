@@ -888,3 +888,35 @@ func (c *Client) replaceDeviceVars(text, deviceID string) string {
 
 	return text
 }
+
+// PublishSystemMetrics publishes gateway system metrics to a dedicated topic.
+// Topic: {base_topic}/$system/metrics  (or status_topic based if configured)
+func (c *Client) PublishSystemMetrics(metrics map[string]any) {
+	if c.client == nil || !c.client.IsConnected() {
+		return
+	}
+
+	c.configMu.RLock()
+	baseTopic := c.config.Topic
+	c.configMu.RUnlock()
+
+	topic := strings.TrimSuffix(baseTopic, "/") + "/$system/metrics"
+
+	payload := map[string]any{
+		"timestamp": time.Now().UnixMilli(),
+		"metrics":   metrics,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	token := c.client.Publish(topic, 0, false, data)
+	go func() {
+		if token.Wait() && token.Error() != nil {
+			atomic.AddInt64(&c.failCount, 1)
+		} else {
+			atomic.AddInt64(&c.successCount, 1)
+		}
+	}()
+}

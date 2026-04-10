@@ -1,7 +1,7 @@
 mqtt:
     - id: mqtt-1
       name: Default MQTT-1
-      enable: true
+      enable: false
       broker: tcp://127.0.0.1:1883
       client_id: industrial_gateway_001
       topic: things/{client_id}/up
@@ -15,8 +15,8 @@ mqtt:
       lwt_payload: '{"status":"lwt","device_id":"%device_id%","timestamp":"%timestamp%"}'
       ignore_offline_data: false
       write_response_topic: things/{client_id}/down/resp
-      username: ""
-      password: ""
+      username: admin
+      password: admin
       cache:
         enable: false
         max_count: 0
@@ -98,7 +98,7 @@ http: []
 opcua:
     - id: opcua-1
       name: Default OPC UA
-      enable: true
+      enable: false
       port: 5050
       endpoint: /test
       security_policy: Auto
@@ -163,3 +163,19 @@ sparkplug_b:
       client_key: ""
       key_password: ""
       devices: {}
+iot_platform:
+    - id: iot-platform-1
+      name: IoT Platform
+      enable: true
+      broker: tcp://192.168.123.10:1885
+      client_id: "25831735_475961002073_20260410110235"
+      username: 25831735:475961002073
+      password: 49c48a5962493e86fcbcd441bf387a932aa6053e6d02f407fb4b6439015eadc3
+      product_id: "25831735"
+      gateway_id: "475961002073"
+      auto_start: true
+      report_interval: 0
+      cache:
+        enable: false
+        max_count: 0
+        flush_interval: ""

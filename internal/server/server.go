@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
-	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -23,18 +22,11 @@ import (
 	"go.uber.org/zap"
 )
 
-type SystemStats struct {
-	CPUUsage    float64 `json:"cpu_usage"`
-	MemoryUsage float64 `json:"memory_usage"`
-	DiskUsage   float64 `json:"disk_usage"`
-	GoRoutines  int     `json:"goroutines"`
-}
-
 type DashboardSummary struct {
 	Channels   []core.ChannelStatus    `json:"channels"`
 	Northbound []core.NorthboundStatus `json:"northbound"`
 	EdgeRules  core.EdgeComputeMetrics `json:"edge_rules"`
-	System     SystemStats             `json:"system"`
+	System     core.SystemMetrics      `json:"system"`
 }
 
 type Server struct {
@@ -46,6 +38,7 @@ type Server struct {
 	nbm                *core.NorthboundManager
 	ecm                *core.EdgeComputeManager
 	sm                 *core.SystemManager
+	sysmon             *core.SysMonitor
 	dsm                *core.DeviceStorageManager
 	logBroadcaster     *logger.LogBroadcaster
 	randomWriteMu      sync.Mutex
@@ -53,7 +46,7 @@ type Server struct {
 	randomWriteRunning bool
 }
 
-func NewServer(cm *core.ChannelManager, st *storage.Storage, pl *core.DataPipeline, nbm *core.NorthboundManager, ecm *core.EdgeComputeManager, sm *core.SystemManager, dsm *core.DeviceStorageManager, logBroadcaster *logger.LogBroadcaster) *Server {
+func NewServer(cm *core.ChannelManager, st *storage.Storage, pl *core.DataPipeline, nbm *core.NorthboundManager, ecm *core.EdgeComputeManager, sm *core.SystemManager, sysmon *core.SysMonitor, dsm *core.DeviceStorageManager, logBroadcaster *logger.LogBroadcaster) *Server {
 	app := fiber.New()
 	app.Use(cors.New())
 
@@ -69,6 +62,7 @@ func NewServer(cm *core.ChannelManager, st *storage.Storage, pl *core.DataPipeli
 		nbm:            nbm,
 		ecm:            ecm,
 		sm:             sm,
+		sysmon:         sysmon,
 		dsm:            dsm,
 		logBroadcaster: logBroadcaster,
 	}
@@ -206,6 +200,7 @@ func (s *Server) setupRoutes() {
 	api.Get("/edge-compute/logs/export", s.exportEdgeComputeLogsToCSV)
 
 	api.Post("/system/restart", s.handleRestart)
+	api.Get("/system/metrics", s.getSystemMetrics)
 	api.Get("/system/network/interfaces", s.getNetworkInterfaces)
 	api.Get("/system/network/routes", s.getRoutes)
 
@@ -266,6 +261,9 @@ func (s *Server) setupRoutes() {
 	api.Post("/northbound/opcua", s.updateOPCUAConfig)
 	api.Get("/northbound/opcua/:id/stats", s.getOPCUAStats)
 	api.Get("/northbound/mqtt/:id/stats", s.getMQTTStats)
+	api.Post("/northbound/iot-platform", s.updateIotPlatformConfig)
+	api.Delete("/northbound/iot-platform/:id", s.deleteIotPlatformConfig)
+	api.Get("/northbound/iot-platform/:id/stats", s.getIotPlatformStats)
 	api.Get("/points", s.getAllPoints)
 
 	// Edge Compute
@@ -523,19 +521,55 @@ func (s *Server) deleteSparkplugBConfig(c *fiber.Ctx) error {
 	return c.SendStatus(200)
 }
 
+func (s *Server) updateIotPlatformConfig(c *fiber.Ctx) error {
+	if s.nbm == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Northbound manager not initialized"})
+	}
+
+	var cfg model.IotPlatformConfig
+	if err := c.BodyParser(&cfg); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	if cfg.ID == "" {
+		cfg.ID = uuid.New().String()
+	}
+
+	if err := s.nbm.UpsertIotPlatformConfig(cfg); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(cfg)
+}
+
+func (s *Server) deleteIotPlatformConfig(c *fiber.Ctx) error {
+	if s.nbm == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Northbound manager not initialized"})
+	}
+	id := c.Params("id")
+	if err := s.nbm.DeleteIotPlatformConfig(id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.SendStatus(200)
+}
+
+func (s *Server) getIotPlatformStats(c *fiber.Ctx) error {
+	if s.nbm == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Northbound manager not initialized"})
+	}
+	id := c.Params("id")
+	stats, err := s.nbm.GetIotPlatformStats(id)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(stats)
+}
+
 // ===== Handler 方法 =====
 
 func (s *Server) getDashboardSummary(c *fiber.Ctx) error {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	// Mock System Stats for now (except memory)
-	// In production, use shirou/gopsutil
-	sys := SystemStats{
-		CPUUsage:    rand.Float64() * 20, // Mock 0-20%
-		MemoryUsage: float64(m.Alloc) / 1024 / 1024,
-		DiskUsage:   45.5, // Mock
-		GoRoutines:  runtime.NumGoroutine(),
+	var sys core.SystemMetrics
+	if s.sysmon != nil {
+		sys = s.sysmon.GetMetrics()
 	}
 
 	// 获取通道统计并添加监控指标
@@ -1313,4 +1347,11 @@ func (s *Server) stopRandomWrite(c *fiber.Ctx) error {
 	}
 	s.randomWriteRunning = false
 	return c.JSON(fiber.Map{"status": "stopping"})
+}
+
+func (s *Server) getSystemMetrics(c *fiber.Ctx) error {
+	if s.sysmon == nil {
+		return c.JSON(core.SystemMetrics{})
+	}
+	return c.JSON(s.sysmon.GetMetrics())
 }

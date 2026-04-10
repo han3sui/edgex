@@ -5,10 +5,10 @@
       <h2 class="dashboard-title">系统概览</h2>
     </div>
 
-    <!-- System Stats Cards -->
+    <!-- System Stats Cards - Row 1: Core Metrics -->
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-label">CPU 使用率</div>
+        <div class="stat-label">CPU 使用率 <span class="stat-sub">{{ system.cpu_cores || '-' }} 核</span></div>
         <div class="stat-value" :style="{ color: getCpuColor(system.cpu_usage) }">
           {{ (system.cpu_usage || 0).toFixed(1) }}%
         </div>
@@ -17,30 +17,78 @@
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">内存使用</div>
-        <div class="stat-value" :style="{ color: getMemoryColor(system.memory_usage) }">
-          {{ formatMemory(system.memory_usage) }}
+        <div class="stat-label">内存使用 <span class="stat-sub">{{ formatBytes(system.memory_total) }}</span></div>
+        <div class="stat-value" :style="{ color: getPercentColor(system.memory_percent) }">
+          {{ (system.memory_percent || 0).toFixed(1) }}%
         </div>
+        <div class="stat-detail">{{ formatBytes(system.memory_used) }} / {{ formatBytes(system.memory_total) }}</div>
         <div class="stat-bar">
-          <div class="stat-progress" :style="{ width: getMemoryPercent(system.memory_usage) + '%', background: getMemoryColor(system.memory_usage) }"></div>
+          <div class="stat-progress" :style="{ width: (system.memory_percent || 0) + '%', background: getPercentColor(system.memory_percent) }"></div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">协程数量</div>
-        <div class="stat-value" style="color: #10b981;">
-          {{ system.goroutines || 0 }}
+        <div class="stat-label">磁盘使用率 <span class="stat-sub">{{ formatBytes(system.disk_total) }}</span></div>
+        <div class="stat-value" :style="{ color: getDiskColor(system.disk_usage) }">
+          {{ (system.disk_usage || 0).toFixed(1) }}%
         </div>
+        <div class="stat-detail">{{ formatBytes(system.disk_used) }} / {{ formatBytes(system.disk_total) }}</div>
+        <div class="stat-bar">
+          <div class="stat-progress" :style="{ width: (system.disk_usage || 0) + '%', background: getDiskColor(system.disk_usage) }"></div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">运行时间</div>
+        <div class="stat-value" style="color: #10b981; font-size: 22px;">
+          {{ formatUptime(system.uptime) }}
+        </div>
+        <div class="stat-detail">协程: {{ system.goroutines || 0 }} | Go 内存: {{ (system.go_mem_alloc || 0).toFixed(1) }} MB</div>
         <div class="stat-bar">
           <div class="stat-progress" style="width: 100%; background: #10b981;"></div>
         </div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">磁盘使用率</div>
-        <div class="stat-value" :style="{ color: getDiskColor(system.disk_usage) }">
-          {{ (system.disk_usage || 0).toFixed(1) }}%
+    </div>
+
+    <!-- System Stats Cards - Row 2: Network & Wireless (conditional) -->
+    <div class="stats-grid stats-grid-secondary" v-if="hasNetworkInfo">
+      <div class="stat-card stat-card-sm" v-if="system.interfaces && system.interfaces.length">
+        <div class="stat-label">网络流量</div>
+        <div class="net-rates">
+          <span class="net-rate up">↑ {{ formatRate(system.net_send_rate) }}</span>
+          <span class="net-rate down">↓ {{ formatRate(system.net_recv_rate) }}</span>
         </div>
-        <div class="stat-bar">
-          <div class="stat-progress" :style="{ width: (system.disk_usage || 0) + '%', background: getDiskColor(system.disk_usage) }"></div>
+        <div class="net-interfaces">
+          <div v-for="iface in system.interfaces" :key="iface.name" class="net-iface">
+            <span class="iface-dot" :class="iface.up ? 'up' : 'down'"></span>
+            <span class="iface-name">{{ iface.name }}</span>
+            <span class="iface-ip">{{ iface.ip || '-' }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="stat-card stat-card-sm" v-if="system.wifi">
+        <div class="stat-label">WiFi</div>
+        <div class="stat-value" style="font-size: 18px;" :style="{ color: system.wifi.connected ? '#10b981' : '#94a3b8' }">
+          {{ system.wifi.ssid || '未连接' }}
+        </div>
+        <div class="stat-detail" v-if="system.wifi.connected">
+          信号: {{ system.wifi.signal }} dBm ({{ system.wifi.quality }}%)
+          <span v-if="system.wifi.bitrate"> | {{ system.wifi.bitrate }}</span>
+        </div>
+        <div class="stat-bar" v-if="system.wifi.connected">
+          <div class="stat-progress" :style="{ width: (system.wifi.quality || 0) + '%', background: getSignalColor(system.wifi.quality) }"></div>
+        </div>
+      </div>
+      <div class="stat-card stat-card-sm" v-if="system.cellular">
+        <div class="stat-label">蜂窝网络 ({{ system.cellular.technology || '4G' }})</div>
+        <div class="stat-value" style="font-size: 18px;" :style="{ color: system.cellular.connected ? '#10b981' : '#94a3b8' }">
+          {{ system.cellular.operator || '未连接' }}
+        </div>
+        <div class="stat-detail" v-if="system.cellular.connected">
+          信号: {{ system.cellular.signal_percent }}%
+          | RSRP: {{ system.cellular.rsrp }} dBm
+          | SINR: {{ system.cellular.sinr }} dB
+        </div>
+        <div class="stat-bar" v-if="system.cellular.connected">
+          <div class="stat-progress" :style="{ width: (system.cellular.signal_percent || 0) + '%', background: getSignalColor(system.cellular.signal_percent) }"></div>
         </div>
       </div>
     </div>
@@ -202,9 +250,26 @@ const router = useRouter()
 
 const system = ref({
     cpu_usage: 0,
+    cpu_cores: 0,
+    memory_total: 0,
+    memory_used: 0,
+    memory_percent: 0,
     memory_usage: 0,
+    disk_total: 0,
+    disk_used: 0,
     disk_usage: 0,
-    goroutines: 0
+    disk_free: 0,
+    goroutines: 0,
+    go_mem_alloc: 0,
+    uptime: 0,
+    system_uptime: 0,
+    net_bytes_sent: 0,
+    net_bytes_recv: 0,
+    net_send_rate: 0,
+    net_recv_rate: 0,
+    interfaces: [],
+    wifi: null,
+    cellular: null
 })
 const channels = ref([])
 const northbound = ref([])
@@ -221,6 +286,12 @@ const totalOfflineDevices = computed(() => {
   return channels.value.reduce((sum, ch) => sum + (ch.offline_count || 0), 0)
 })
 
+// 是否有网络扩展信息
+const hasNetworkInfo = computed(() => {
+  return (system.value.interfaces && system.value.interfaces.length > 0) ||
+    system.value.wifi || system.value.cellular
+})
+
 // 获取颜色
 const getCpuColor = (val) => {
   if (val >= 80) return '#ef4444'
@@ -228,9 +299,9 @@ const getCpuColor = (val) => {
   return '#6366f1'
 }
 
-const getMemoryColor = (val) => {
-  if (val >= 1024 * 0.8) return '#ef4444'
-  if (val >= 1024 * 0.6) return '#f59e0b'
+const getPercentColor = (val) => {
+  if (val >= 85) return '#ef4444'
+  if (val >= 70) return '#f59e0b'
   return '#3b82f6'
 }
 
@@ -240,17 +311,35 @@ const getDiskColor = (val) => {
   return '#f97316'
 }
 
-// 格式化
-const formatMemory = (mb) => {
-  if (!mb) return '0 MB'
-  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB'
-  return Math.round(mb) + ' MB'
+const getSignalColor = (val) => {
+  if (val >= 70) return '#10b981'
+  if (val >= 40) return '#f59e0b'
+  return '#ef4444'
 }
 
-const getMemoryPercent = (mb) => {
-  // 假设总内存为 8GB
-  const total = 8 * 1024
-  return Math.min(((mb || 0) / total) * 100, 100)
+// 格式化
+const formatBytes = (bytes) => {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let val = bytes
+  while (val >= 1024 && i < units.length - 1) { val /= 1024; i++ }
+  return val.toFixed(i > 1 ? 1 : 0) + ' ' + units[i]
+}
+
+const formatRate = (bytesPerSec) => {
+  if (!bytesPerSec || bytesPerSec < 0) return '0 B/s'
+  return formatBytes(bytesPerSec) + '/s'
+}
+
+const formatUptime = (seconds) => {
+  if (!seconds) return '0s'
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (d > 0) return `${d}天 ${h}时 ${m}分`
+  if (h > 0) return `${h}时 ${m}分`
+  return `${m}分 ${seconds % 60}秒`
 }
 
 const formatPercent = (val) => {
@@ -408,6 +497,11 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 20px;
+  margin-bottom: 20px;
+}
+
+.stats-grid-secondary {
+  grid-template-columns: repeat(3, 1fr);
   margin-bottom: 32px;
 }
 
@@ -436,6 +530,23 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
+.stat-detail {
+  font-size: 12px;
+  color: var(--arco-text-3, #94a3b8);
+  margin-bottom: 8px;
+}
+
+.stat-sub {
+  font-weight: 400;
+  color: var(--arco-text-3, #94a3b8);
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.stat-card-sm {
+  padding: 16px;
+}
+
 .stat-bar {
   height: 4px;
   background: var(--arco-border, #e2e8f0);
@@ -447,6 +558,53 @@ onUnmounted(() => {
   height: 100%;
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+
+/* Network info */
+.net-rates {
+  display: flex;
+  gap: 16px;
+  margin: 8px 0;
+}
+
+.net-rate {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.net-rate.up { color: #f59e0b; }
+.net-rate.down { color: #3b82f6; }
+
+.net-interfaces {
+  margin-top: 8px;
+}
+
+.net-iface {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--arco-text-2, #64748b);
+  padding: 3px 0;
+}
+
+.iface-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.iface-dot.up { background: #10b981; }
+.iface-dot.down { background: #94a3b8; }
+
+.iface-name {
+  font-weight: 500;
+  min-width: 60px;
+}
+
+.iface-ip {
+  color: var(--arco-text-3, #94a3b8);
 }
 
 /* Section */
@@ -945,11 +1103,17 @@ onUnmounted(() => {
   .northbound-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .stats-grid-secondary {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 768px) {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .stats-grid-secondary {
+    grid-template-columns: 1fr;
   }
   
   .channels-grid,

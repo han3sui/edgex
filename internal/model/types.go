@@ -287,11 +287,12 @@ type DriverConfig struct {
 
 // NorthboundConfig defines configuration for northbound data reporting
 type NorthboundConfig struct {
-	MQTT       []MQTTConfig       `json:"mqtt" yaml:"mqtt"`
-	HTTP       []HTTPConfig       `json:"http" yaml:"http"`
-	OPCUA      []OPCUAConfig      `json:"opcua" yaml:"opcua"`
-	SparkplugB []SparkplugBConfig `json:"sparkplug_b" yaml:"sparkplug_b"`
-	Status     map[string]int     `json:"status,omitempty" yaml:"-"`
+	MQTT        []MQTTConfig        `json:"mqtt" yaml:"mqtt"`
+	HTTP        []HTTPConfig        `json:"http" yaml:"http"`
+	OPCUA       []OPCUAConfig       `json:"opcua" yaml:"opcua"`
+	SparkplugB  []SparkplugBConfig  `json:"sparkplug_b" yaml:"sparkplug_b"`
+	IotPlatform []IotPlatformConfig `json:"iot_platform" yaml:"iot_platform"`
+	Status      map[string]int      `json:"status,omitempty" yaml:"-"`
 }
 
 type DataCacheConfig struct {
@@ -390,6 +391,24 @@ type SparkplugBConfig struct {
 	ClientKey      string          `json:"client_key" yaml:"client_key"`
 	KeyPassword    string          `json:"key_password" yaml:"key_password"`
 	Devices        map[string]bool `json:"devices" yaml:"devices"` // Key: DeviceID, Value: Enable
+}
+
+// IotPlatformConfig defines configuration for IoT platform northbound integration.
+// The platform pushes channel/device/point configs via MQTT, and the gateway reports
+// collected data back through the same connection.
+type IotPlatformConfig struct {
+	ID             string          `json:"id" yaml:"id"`
+	Name           string          `json:"name" yaml:"name"`
+	Enable         bool            `json:"enable" yaml:"enable"`
+	Broker         string          `json:"broker" yaml:"broker"`
+	ClientID       string          `json:"client_id" yaml:"client_id"`
+	Username       string          `json:"username" yaml:"username"`
+	Password       string          `json:"password" yaml:"password"`
+	ProductID      string          `json:"product_id" yaml:"product_id"`
+	GatewayID      string          `json:"gateway_id" yaml:"gateway_id"`
+	AutoStart      bool            `json:"auto_start" yaml:"auto_start"`
+	ReportInterval int             `json:"report_interval" yaml:"report_interval"` // Seconds, 0 = realtime
+	Cache          DataCacheConfig `json:"cache" yaml:"cache"`
 }
 
 // EdgeRule represents an edge computing rule

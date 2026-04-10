@@ -1,0 +1,632 @@
+{
+  "version": "1.0",
+  "properties": [
+    {
+      "function_type": "property",
+      "name": "CPU使用率",
+      "code": "cpu_usage",
+      "data_type": {
+        "type": "float",
+        "specs": {
+          "min": 0,
+          "max": 100,
+          "step": 0.1,
+          "unit": "%",
+          "unitName": "百分比"
+        }
+      },
+      "access_mode": "R",
+      "remark": "网关整机CPU使用率"
+    },
+    {
+      "function_type": "property",
+      "name": "CPU核心数",
+      "code": "cpu_cores",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 1,
+          "max": 128,
+          "step": 1,
+          "unit": "核",
+          "unitName": "核"
+        }
+      },
+      "access_mode": "R",
+      "remark": "CPU逻辑核心数"
+    },
+    {
+      "function_type": "property",
+      "name": "内存总量",
+      "code": "memory_total",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 999999,
+          "step": 1,
+          "unit": "MB",
+          "unitName": "兆字节"
+        }
+      },
+      "access_mode": "R",
+      "remark": "系统物理内存总量（MB）"
+    },
+    {
+      "function_type": "property",
+      "name": "内存已用",
+      "code": "memory_used",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 999999,
+          "step": 1,
+          "unit": "MB",
+          "unitName": "兆字节"
+        }
+      },
+      "access_mode": "R",
+      "remark": "系统已用内存（MB）"
+    },
+    {
+      "function_type": "property",
+      "name": "内存使用率",
+      "code": "memory_percent",
+      "data_type": {
+        "type": "float",
+        "specs": {
+          "min": 0,
+          "max": 100,
+          "step": 0.1,
+          "unit": "%",
+          "unitName": "百分比"
+        }
+      },
+      "access_mode": "R",
+      "remark": "整机内存使用百分比"
+    },
+    {
+      "function_type": "property",
+      "name": "磁盘总量",
+      "code": "disk_total",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 99999999,
+          "step": 1,
+          "unit": "MB",
+          "unitName": "兆字节"
+        }
+      },
+      "access_mode": "R",
+      "remark": "根分区磁盘总容量（MB）"
+    },
+    {
+      "function_type": "property",
+      "name": "磁盘已用",
+      "code": "disk_used",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 99999999,
+          "step": 1,
+          "unit": "MB",
+          "unitName": "兆字节"
+        }
+      },
+      "access_mode": "R",
+      "remark": "根分区磁盘已用容量（字节）"
+    },
+    {
+      "function_type": "property",
+      "name": "磁盘使用率",
+      "code": "disk_percent",
+      "data_type": {
+        "type": "float",
+        "specs": {
+          "min": 0,
+          "max": 100,
+          "step": 0.1,
+          "unit": "%",
+          "unitName": "百分比"
+        }
+      },
+      "access_mode": "R",
+      "remark": "根分区磁盘使用百分比"
+    },
+    {
+      "function_type": "property",
+      "name": "磁盘剩余",
+      "code": "disk_free",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 99999999,
+          "step": 1,
+          "unit": "MB",
+          "unitName": "兆字节"
+        }
+      },
+      "access_mode": "R",
+      "remark": "根分区磁盘剩余容量（MB）"
+    },
+    {
+      "function_type": "property",
+      "name": "协程数量",
+      "code": "goroutines",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 999999,
+          "step": 1,
+          "unit": "",
+          "unitName": ""
+        }
+      },
+      "access_mode": "R",
+      "remark": "Go运行时协程数量，反映网关内部并发负载"
+    },
+    {
+      "function_type": "property",
+      "name": "网关运行时长",
+      "code": "uptime",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 999999999,
+          "step": 1,
+          "unit": "s",
+          "unitName": "秒"
+        }
+      },
+      "access_mode": "R",
+      "remark": "网关进程启动以来的运行时长（秒）"
+    },
+    {
+      "function_type": "property",
+      "name": "系统运行时长",
+      "code": "system_uptime",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 999999999,
+          "step": 1,
+          "unit": "s",
+          "unitName": "秒"
+        }
+      },
+      "access_mode": "R",
+      "remark": "操作系统开机以来的运行时长（秒）"
+    },
+    {
+      "function_type": "property",
+      "name": "网络发送速率",
+      "code": "net_send_rate",
+      "data_type": {
+        "type": "float",
+        "specs": {
+          "min": 0,
+          "max": 9999999,
+          "step": 0.01,
+          "unit": "KB/s",
+          "unitName": "千字节每秒"
+        }
+      },
+      "access_mode": "R",
+      "remark": "所有网卡汇总的实时发送速率"
+    },
+    {
+      "function_type": "property",
+      "name": "网络接收速率",
+      "code": "net_recv_rate",
+      "data_type": {
+        "type": "float",
+        "specs": {
+          "min": 0,
+          "max": 9999999,
+          "step": 0.01,
+          "unit": "KB/s",
+          "unitName": "千字节每秒"
+        }
+      },
+      "access_mode": "R",
+      "remark": "所有网卡汇总的实时接收速率"
+    },
+    {
+      "function_type": "property",
+      "name": "WiFi SSID",
+      "code": "wifi_ssid",
+      "data_type": {
+        "type": "text",
+        "specs": {
+          "length": 64
+        }
+      },
+      "access_mode": "R",
+      "remark": "当前连接的WiFi网络名称（仅Linux）"
+    },
+    {
+      "function_type": "property",
+      "name": "WiFi信号强度",
+      "code": "wifi_signal",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": -100,
+          "max": 0,
+          "step": 1,
+          "unit": "dBm",
+          "unitName": "分贝毫瓦"
+        }
+      },
+      "access_mode": "R",
+      "remark": "WiFi信号强度（dBm），值越大信号越好"
+    },
+    {
+      "function_type": "property",
+      "name": "WiFi信号质量",
+      "code": "wifi_quality",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "unit": "%",
+          "unitName": "百分比"
+        }
+      },
+      "access_mode": "R",
+      "remark": "WiFi链路质量百分比"
+    },
+    {
+      "function_type": "property",
+      "name": "WiFi连接状态",
+      "code": "wifi_connected",
+      "data_type": {
+        "type": "bool",
+        "specs": {
+          "0": "未连接",
+          "1": "已连接"
+        }
+      },
+      "access_mode": "R",
+      "remark": "WiFi是否已连接"
+    },
+    {
+      "function_type": "property",
+      "name": "蜂窝运营商",
+      "code": "cell_operator",
+      "data_type": {
+        "type": "text",
+        "specs": {
+          "length": 64
+        }
+      },
+      "access_mode": "R",
+      "remark": "蜂窝网络运营商名称（如中国移动）"
+    },
+    {
+      "function_type": "property",
+      "name": "蜂窝网络制式",
+      "code": "cell_technology",
+      "data_type": {
+        "type": "text",
+        "specs": {
+          "length": 16
+        }
+      },
+      "access_mode": "R",
+      "remark": "蜂窝网络接入技术（如4G/LTE/5G-NR）"
+    },
+    {
+      "function_type": "property",
+      "name": "蜂窝信号质量",
+      "code": "cell_signal_pct",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": 0,
+          "max": 100,
+          "step": 1,
+          "unit": "%",
+          "unitName": "百分比"
+        }
+      },
+      "access_mode": "R",
+      "remark": "蜂窝信号质量百分比（ModemManager报告）"
+    },
+    {
+      "function_type": "property",
+      "name": "蜂窝RSRP",
+      "code": "cell_rsrp",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": -140,
+          "max": -44,
+          "step": 1,
+          "unit": "dBm",
+          "unitName": "分贝毫瓦"
+        }
+      },
+      "access_mode": "R",
+      "remark": "LTE参考信号接收功率，>-90好，<-120差"
+    },
+    {
+      "function_type": "property",
+      "name": "蜂窝RSRQ",
+      "code": "cell_rsrq",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": -20,
+          "max": -3,
+          "step": 1,
+          "unit": "dB",
+          "unitName": "分贝"
+        }
+      },
+      "access_mode": "R",
+      "remark": "LTE参考信号接收质量，>-10好，<-15差"
+    },
+    {
+      "function_type": "property",
+      "name": "蜂窝SINR",
+      "code": "cell_sinr",
+      "data_type": {
+        "type": "int",
+        "specs": {
+          "min": -20,
+          "max": 30,
+          "step": 1,
+          "unit": "dB",
+          "unitName": "分贝"
+        }
+      },
+      "access_mode": "R",
+      "remark": "LTE信号与干扰噪声比，>13好，<0差"
+    },
+    {
+      "function_type": "property",
+      "name": "蜂窝连接状态",
+      "code": "cell_connected",
+      "data_type": {
+        "type": "bool",
+        "specs": {
+          "0": "未连接",
+          "1": "已连接"
+        }
+      },
+      "access_mode": "R",
+      "remark": "蜂窝模组是否已连接到网络"
+    }
+  ],
+  "services": [
+    {
+      "function_type": "service",
+      "name": "网关重启",
+      "code": "reboot",
+      "data_type": {
+        "type": "",
+        "specs": {}
+      },
+      "call_type": "async",
+      "input_param": [
+        {
+          "name": "延迟时间",
+          "code": "delay",
+          "data_type": {
+            "type": "int",
+            "specs": {
+              "min": 0,
+              "max": 3600,
+              "unit": "s",
+              "unitName": "秒"
+            }
+          }
+        }
+      ],
+      "output_param": [
+        {
+          "name": "执行结果",
+          "code": "result",
+          "data_type": {
+            "type": "bool",
+            "specs": {
+              "0": "失败",
+              "1": "成功"
+            }
+          }
+        }
+      ],
+      "remark": "远程重启网关设备"
+    }
+  ],
+  "events": [
+    {
+      "function_type": "event",
+      "name": "CPU过载告警",
+      "code": "cpu_overload",
+      "data_type": {
+        "type": "",
+        "specs": {}
+      },
+      "event_type": "alarm",
+      "output_param": [
+        {
+          "name": "CPU使用率",
+          "code": "cpu_usage",
+          "data_type": {
+            "type": "float",
+            "specs": {
+              "min": 0,
+              "max": 100,
+              "unit": "%",
+              "unitName": "百分比"
+            }
+          }
+        },
+        {
+          "name": "告警级别",
+          "code": "alarm_level",
+          "data_type": {
+            "type": "enum",
+            "specs": {
+              "list": [
+                { "value": "1", "label": "警告" },
+                { "value": "2", "label": "严重" }
+              ]
+            }
+          }
+        }
+      ],
+      "remark": "CPU使用率超过阈值（80%警告/95%严重）"
+    },
+    {
+      "function_type": "event",
+      "name": "内存不足告警",
+      "code": "memory_low",
+      "data_type": {
+        "type": "",
+        "specs": {}
+      },
+      "event_type": "alarm",
+      "output_param": [
+        {
+          "name": "内存使用率",
+          "code": "memory_percent",
+          "data_type": {
+            "type": "float",
+            "specs": {
+              "min": 0,
+              "max": 100,
+              "unit": "%",
+              "unitName": "百分比"
+            }
+          }
+        },
+        {
+          "name": "可用内存",
+          "code": "memory_free",
+          "data_type": {
+            "type": "int",
+            "specs": {
+              "min": 0,
+              "max": 999999,
+              "unit": "MB",
+              "unitName": "兆字节"
+            }
+          }
+        }
+      ],
+      "remark": "内存使用率超过阈值（85%警告/95%严重）"
+    },
+    {
+      "function_type": "event",
+      "name": "磁盘空间不足告警",
+      "code": "disk_low",
+      "data_type": {
+        "type": "",
+        "specs": {}
+      },
+      "event_type": "alarm",
+      "output_param": [
+        {
+          "name": "磁盘使用率",
+          "code": "disk_percent",
+          "data_type": {
+            "type": "float",
+            "specs": {
+              "min": 0,
+              "max": 100,
+              "unit": "%",
+              "unitName": "百分比"
+            }
+          }
+        },
+        {
+          "name": "剩余空间",
+          "code": "disk_free",
+          "data_type": {
+            "type": "int",
+            "specs": {
+              "min": 0,
+              "max": 99999999,
+              "unit": "MB",
+              "unitName": "兆字节"
+            }
+          }
+        }
+      ],
+      "remark": "磁盘使用率超过阈值（80%警告/95%严重）"
+    },
+    {
+      "function_type": "event",
+      "name": "蜂窝信号弱告警",
+      "code": "cell_signal_weak",
+      "data_type": {
+        "type": "",
+        "specs": {}
+      },
+      "event_type": "alarm",
+      "output_param": [
+        {
+          "name": "RSRP",
+          "code": "cell_rsrp",
+          "data_type": {
+            "type": "int",
+            "specs": {
+              "min": -140,
+              "max": -44,
+              "unit": "dBm",
+              "unitName": "分贝毫瓦"
+            }
+          }
+        },
+        {
+          "name": "信号质量",
+          "code": "cell_signal_pct",
+          "data_type": {
+            "type": "int",
+            "specs": {
+              "min": 0,
+              "max": 100,
+              "unit": "%",
+              "unitName": "百分比"
+            }
+          }
+        }
+      ],
+      "remark": "蜂窝信号RSRP低于-110dBm时告警"
+    },
+    {
+      "function_type": "event",
+      "name": "网关上线",
+      "code": "gateway_online",
+      "data_type": {
+        "type": "",
+        "specs": {}
+      },
+      "event_type": "info",
+      "output_param": [
+        {
+          "name": "启动时间",
+          "code": "boot_time",
+          "data_type": {
+            "type": "date",
+            "specs": {}
+          }
+        }
+      ],
+      "remark": "网关进程启动上线事件"
+    }
+  ]
+}
