@@ -58,6 +58,10 @@ type Client struct {
 	buffers     map[string]map[string]model.Value
 	bufferTimer *time.Timer
 
+	// Subscribed device IDs (for property/set and service/invoke)
+	subMu         sync.Mutex
+	subscribedIDs map[string]struct{} // deviceID set
+
 	successCount    int64
 	failCount       int64
 	reconnectCount  int64
@@ -67,10 +71,11 @@ type Client struct {
 
 func NewClient(cfg model.IotPlatformConfig, cm ChannelManager) *Client {
 	return &Client{
-		config:   cfg,
-		cm:       cm,
-		stopChan: make(chan struct{}),
-		buffers:  make(map[string]map[string]model.Value),
+		config:        cfg,
+		cm:            cm,
+		stopChan:      make(chan struct{}),
+		buffers:       make(map[string]map[string]model.Value),
+		subscribedIDs: make(map[string]struct{}),
 	}
 }
 
@@ -240,20 +245,61 @@ func (c *Client) subscribe(client mqtt.Client, productID, gatewayID string) {
 		zap.L().Info("Subscribed", zap.String("topic", configTopic), zap.String("component", component))
 	}
 
-	// Property set (wildcard for all devices under this gateway)
-	propSetTopic := fmt.Sprintf("/sys/%s/+/thing/property/set", productID)
+	// Subscribe property/set and service/invoke for gateway itself
+	c.subscribeDeviceTopics(client, productID, gatewayID)
+
+	// Subscribe for all existing platform-managed sub-devices
+	c.subMu.Lock()
+	c.subscribedIDs[gatewayID] = struct{}{}
+	c.subMu.Unlock()
+
+	for _, ch := range c.cm.GetChannels() {
+		if !IsPlatformChannel(ch.ID) {
+			continue
+		}
+		for _, dev := range ch.Devices {
+			c.subMu.Lock()
+			if _, exists := c.subscribedIDs[dev.ID]; !exists {
+				c.subscribedIDs[dev.ID] = struct{}{}
+				c.subMu.Unlock()
+				c.subscribeDeviceTopics(client, productID, dev.ID)
+			} else {
+				c.subMu.Unlock()
+			}
+		}
+	}
+}
+
+// subscribeDeviceTopics subscribes property/set and service/invoke for a specific device.
+func (c *Client) subscribeDeviceTopics(client mqtt.Client, productID, deviceID string) {
+	prefix := c.topicPrefix(productID, deviceID)
+
+	propSetTopic := prefix + "/thing/property/set"
 	if token := client.Subscribe(propSetTopic, 1, c.handlePropertySet); token.Wait() && token.Error() != nil {
-		zap.L().Error("Failed to subscribe property/set", zap.Error(token.Error()), zap.String("component", component))
+		zap.L().Error("Failed to subscribe property/set", zap.Error(token.Error()), zap.String("device", deviceID), zap.String("component", component))
 	} else {
-		zap.L().Info("Subscribed", zap.String("topic", propSetTopic), zap.String("component", component))
+		zap.L().Debug("Subscribed", zap.String("topic", propSetTopic), zap.String("component", component))
 	}
 
-	// Service invoke (wildcard)
-	svcTopic := fmt.Sprintf("/sys/%s/+/thing/service/+/invoke", productID)
+	svcTopic := prefix + "/thing/service/+/invoke"
 	if token := client.Subscribe(svcTopic, 1, c.handleServiceInvoke); token.Wait() && token.Error() != nil {
-		zap.L().Error("Failed to subscribe service/invoke", zap.Error(token.Error()), zap.String("component", component))
+		zap.L().Error("Failed to subscribe service/invoke", zap.Error(token.Error()), zap.String("device", deviceID), zap.String("component", component))
 	} else {
-		zap.L().Info("Subscribed", zap.String("topic", svcTopic), zap.String("component", component))
+		zap.L().Debug("Subscribed", zap.String("topic", svcTopic), zap.String("component", component))
+	}
+}
+
+// unsubscribeDeviceTopics removes property/set and service/invoke subscriptions for a device.
+func (c *Client) unsubscribeDeviceTopics(client mqtt.Client, productID, deviceID string) {
+	prefix := c.topicPrefix(productID, deviceID)
+	topics := []string{
+		prefix + "/thing/property/set",
+		prefix + "/thing/service/+/invoke",
+	}
+	for _, t := range topics {
+		if token := client.Unsubscribe(t); token.Wait() && token.Error() != nil {
+			zap.L().Warn("Failed to unsubscribe", zap.String("topic", t), zap.Error(token.Error()), zap.String("component", component))
+		}
 	}
 }
 
@@ -325,6 +371,24 @@ func (c *Client) processConfigPush(msgID string, paramsRaw json.RawMessage) {
 		}
 	}
 
+	// Subscribe property/set and service/invoke for newly added sub-devices
+	c.configMu.RLock()
+	productID := c.config.ProductID
+	c.configMu.RUnlock()
+
+	if c.client != nil && c.client.IsConnected() {
+		for _, dev := range ch.Devices {
+			c.subMu.Lock()
+			if _, exists := c.subscribedIDs[dev.ID]; !exists {
+				c.subscribedIDs[dev.ID] = struct{}{}
+				c.subMu.Unlock()
+				c.subscribeDeviceTopics(c.client, productID, dev.ID)
+			} else {
+				c.subMu.Unlock()
+			}
+		}
+	}
+
 	zap.L().Info("Platform config applied",
 		zap.String("channel", ch.ID),
 		zap.Int("devices", len(ch.Devices)),
@@ -341,15 +405,39 @@ func (c *Client) processConfigDelete(msgID string, paramsRaw json.RawMessage) {
 	}
 
 	channelID := MakeChannelID(params.ChannelID)
-	if existing := c.cm.GetChannel(channelID); existing == nil {
+	existing := c.cm.GetChannel(channelID)
+	if existing == nil {
 		c.replyConfig(msgID, 200, true, "ok")
 		return
+	}
+
+	// Collect device IDs before removing the channel
+	removedDeviceIDs := make([]string, 0, len(existing.Devices))
+	for _, dev := range existing.Devices {
+		removedDeviceIDs = append(removedDeviceIDs, dev.ID)
 	}
 
 	_ = c.cm.StopChannel(channelID)
 	if err := c.cm.RemoveChannel(channelID); err != nil {
 		c.replyConfig(msgID, 500, false, err.Error())
 		return
+	}
+
+	// Unsubscribe removed sub-devices (skip if device still exists in another channel)
+	c.configMu.RLock()
+	productID := c.config.ProductID
+	c.configMu.RUnlock()
+
+	if c.client != nil && c.client.IsConnected() {
+		for _, devID := range removedDeviceIDs {
+			if c.findChannelForDevice(devID) != "" {
+				continue // device still managed by another platform channel
+			}
+			c.subMu.Lock()
+			delete(c.subscribedIDs, devID)
+			c.subMu.Unlock()
+			c.unsubscribeDeviceTopics(c.client, productID, devID)
+		}
 	}
 
 	zap.L().Info("Platform config deleted", zap.String("channel", channelID), zap.String("component", component))
