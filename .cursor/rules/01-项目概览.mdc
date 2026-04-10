@@ -1,0 +1,295 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# 工业边缘网关 (Edge Gateway) - 项目概览
+
+基于 Go + Vue 3 的工业物联网边缘网关系统。支持多种南向工业协议采集设备数据，通过数据管道进行边缘计算处理，并经北向通道上报至云端/上位系统。内置 Web 管理界面，提供设备管理、规则引擎、实时监控等功能。
+
+**模块名**: `edge-gateway`  
+**Go 版本**: 1.25.3  
+**前端**: Vue 3 + Vite + Arco Design  
+**启动命令**: `go run cmd/main.go -conf conf`  
+**默认端口**: 8082（`conf/server.yaml`）
+
+---
+
+## 系统架构
+
+```
+南向设备 ←→ [Driver 协议驱动] ←→ [ChannelManager 通道管理]
+                                        ↓
+                                  [DataPipeline 数据管道]
+                                   ↓      ↓       ↓
+                              [存储]  [边缘计算]  [WebSocket广播]
+                                        ↓
+                              [NorthboundManager 北向管理]
+                                   ↓      ↓       ↓       ↓
+                                [MQTT]  [HTTP]  [OPC UA]  [SparkplugB]
+```
+
+## 核心组件
+
+- **DataPipeline**: 数据管道，接收驱动采集数据，分发给多个 Handler（存储、边缘计算、WebSocket 广播等）
+- **ChannelManager**: 南向通道管理，管理协议驱动实例、采集调度、设备状态，实现 `SouthboundManager` 接口
+- **NorthboundManager**: 北向管理，管理 MQTT/HTTP/OPC UA Server/SparkplugB 生命周期与数据上报
+- **EdgeComputeManager**: 边缘规则引擎，基于 `expr` 表达式求值，支持条件触发、动作执行
+- **SystemManager**: 系统配置管理（网络、NTP、主机名、HA、LDAP 等）
+- **DeviceStorageManager**: 设备历史数据存储管理
+- **影子设备系统**: `ShadowCore` / `ShadowIngress` / `VirtualShadowEngine`，设备数据缓存与优化
+
+## 关键入口文件
+
+- [cmd/main.go](mdc:cmd/main.go): 应用程序主入口，初始化所有核心组件并启动服务
+- [internal/core/pipeline.go](mdc:internal/core/pipeline.go): 数据管道核心实现
+- [internal/core/channel_manager.go](mdc:internal/core/channel_manager.go): 南向通道管理器
+- [internal/core/northbound_manager.go](mdc:internal/core/northbound_manager.go): 北向管理器
+- [internal/core/edge_compute_manager.go](mdc:internal/core/edge_compute_manager.go): 边缘计算规则引擎
+- [internal/server/server.go](mdc:internal/server/server.go): Fiber HTTP 服务器与路由定义
+- [internal/driver/interface.go](mdc:internal/driver/interface.go): 南向驱动统一接口定义
+- [internal/model/types.go](mdc:internal/model/types.go): 核心数据模型定义
+
+---
+
+## 项目目录结构
+
+```
+edge-gateway/
+├── cmd/                              # 入口与工具命令
+│   ├── main.go                       # 主程序入口
+│   ├── compute_hash/                 # 哈希计算工具
+│   ├── debug_opcua/                  # OPC UA 调试工具
+│   ├── trigger_scan/                 # 触发扫描工具
+│   ├── verify_*/                     # 各协议验证工具
+│   └── test_*/                       # 各协议测试工具
+│
+├── conf/                             # 运行时 YAML 配置
+│   ├── server.yaml                   # 服务端口、日志级别
+│   ├── storage.yaml                  # BoltDB 存储路径
+│   ├── users.yaml                    # 用户认证配置
+│   ├── system.yaml                   # 系统配置（网络、NTP、HA、LDAP 等）
+│   ├── channels.yaml                 # 南向通道与设备配置
+│   ├── northbound.yaml               # 北向连接配置
+│   ├── edge_rules.yaml               # 边缘计算规则
+│   └── devices/                      # 设备协议配置片段
+│       ├── bacnet-ip/
+│       ├── modbus-tcp/
+│       └── opc-ua/
+│
+├── internal/                         # Go 核心业务代码
+│   ├── config/                       # 配置加载与热重载
+│   │   └── config.go                 # ConfigManager，合并多份 YAML，支持 Watch
+│   │
+│   ├── core/                         # 业务核心（约 50+ 文件）
+│   │   ├── pipeline.go               # DataPipeline：数据聚合与分发
+│   │   ├── channel_manager.go        # ChannelManager：南向通道生命周期
+│   │   ├── northbound_manager.go     # NorthboundManager：北向连接管理
+│   │   ├── northbound_manager_ext.go # 北向管理器扩展功能
+│   │   ├── edge_compute_manager.go   # EdgeComputeManager：规则引擎
+│   │   ├── system_manager.go         # SystemManager：系统配置
+│   │   ├── device_storage_manager.go # DeviceStorageManager：设备历史
+│   │   ├── device_adapter.go         # 设备适配器
+│   │   ├── device_manager.go         # 设备管理
+│   │   ├── protocol_adapter.go       # 协议适配器
+│   │   ├── collection_scheduler.go   # 采集调度器
+│   │   ├── node_status.go            # 节点状态管理
+│   │   ├── shadow_core.go            # 影子设备核心
+│   │   ├── shadow_ingress.go         # 影子设备数据入口
+│   │   ├── shadow_device_optimizer.go# 影子设备优化器
+│   │   ├── virtual_shadow_engine.go  # 虚拟影子引擎
+│   │   ├── mtu_manager.go            # MTU 管理
+│   │   ├── rtt_manager.go            # RTT 管理
+│   │   ├── gap_optimizer.go          # 采集间隔优化
+│   │   └── scheduler.go              # 调度器
+│   │
+│   ├── driver/                       # 南向协议驱动
+│   │   ├── interface.go              # Driver 统一接口（Init/Connect/Read/Write/Health）
+│   │   ├── modbus/                   # Modbus TCP/RTU 驱动
+│   │   ├── opcua/                    # OPC UA 驱动
+│   │   ├── bacnet/                   # BACnet/IP 驱动
+│   │   ├── s7/                       # 西门子 S7 驱动
+│   │   ├── dlt645/                   # DL/T 645 电表协议驱动
+│   │   ├── ethernetip/               # EtherNet/IP 驱动
+│   │   ├── mitsubishi/               # 三菱 PLC 驱动
+│   │   └── omron/                    # 欧姆龙 PLC 驱动
+│   │
+│   ├── model/                        # 数据模型
+│   │   ├── types.go                  # 核心类型：Point, Value, Device, Channel, EdgeRule 等
+│   │   ├── system.go                 # 系统配置模型
+│   │   ├── metrics.go                # 指标模型
+│   │   ├── user.go                   # 用户模型
+│   │   └── bblot.go                  # BoltDB 相关模型
+│   │
+│   ├── northbound/                   # 北向协议实现
+│   │   ├── mqtt/                     # MQTT 客户端
+│   │   ├── http/                     # HTTP 推送客户端
+│   │   ├── opcua/                    # OPC UA Server
+│   │   └── sparkplugb/               # SparkplugB 客户端
+│   │
+│   ├── network/                      # 网络管理
+│   │   ├── manager.go                # 网络管理器
+│   │   ├── adapter.go                # 网络适配器
+│   │   ├── linux_adapter.go          # Linux 网络适配
+│   │   ├── dns_proxy.go              # DNS 代理
+│   │   └── mdns_server.go            # mDNS 服务
+│   │
+│   ├── server/                       # HTTP 服务层（Fiber）
+│   │   ├── server.go                 # Server 主体、路由注册、REST/WebSocket 处理
+│   │   ├── server_ext.go             # 服务器扩展
+│   │   ├── auth.go                   # JWT 认证
+│   │   ├── ldap_auth.go              # LDAP 认证
+│   │   ├── system_handler.go         # 系统配置 API
+│   │   ├── metrics_handler.go        # 指标 API
+│   │   ├── device_scan_handler.go    # 设备扫描 API
+│   │   └── edge_logs.go              # 边缘日志 API
+│   │
+│   ├── storage/                      # 持久化存储
+│   │   └── boltdb.go                 # BoltDB 实现（值存储、离线缓存、历史数据）
+│   │
+│   └── pkg/                          # 内部公共包
+│       ├── logger/                   # 日志与 LogBroadcaster（WebSocket 日志流）
+│       └── dataformat/               # 点位数据格式化与映射
+│
+├── ui/                               # Vue 3 前端
+│   ├── package.json                  # 依赖：Vue 3, Vite 5, Arco Design, Pinia, Axios, vue-i18n
+│   ├── vite.config.js                # Vite 构建配置
+│   ├── index.html                    # SPA 入口
+│   └── src/
+│       ├── main.js                   # Vue 应用入口
+│       ├── App.vue                   # 根组件
+│       ├── router/index.js           # Vue Router 路由配置
+│       ├── stores/                   # Pinia 状态管理（app.js, user.js）
+│       ├── api/login.js              # API 请求封装
+│       ├── plugins/vuetify.js        # UI 插件配置
+│       ├── i18n/                     # 国际化
+│       ├── composables/              # 组合式函数
+│       ├── views/                    # 页面视图
+│       │   ├── Dashboard.vue         # 仪表盘
+│       │   ├── ChannelList.vue       # 通道管理
+│       │   ├── DeviceList.vue        # 设备管理
+│       │   ├── PointList.vue         # 点位管理
+│       │   ├── Northbound.vue        # 北向配置
+│       │   ├── EdgeCompute.vue       # 边缘计算规则
+│       │   ├── EdgeComputeMetrics.vue# 边缘计算指标
+│       │   ├── SystemSettings.vue    # 系统设置
+│       │   ├── LogViewer.vue         # 日志查看器
+│       │   ├── Login.vue             # 登录页
+│       │   └── components/           # 页面子组件
+│       │       ├── NetworkSettings.vue
+│       │       ├── TimeSettings.vue
+│       │       ├── HASettings.vue
+│       │       ├── HostnameSettings.vue
+│       │       ├── LDAPSettings.vue
+│       │       └── SystemMaintenance.vue
+│       └── components/               # 全局共享组件
+│           ├── northbound/           # 北向配置组件
+│           ├── point-config/         # 点位配置组件
+│           ├── ActionEditor.vue      # 动作编辑器
+│           ├── BACnetScanner.vue     # BACnet 扫描器
+│           ├── OpcuaScanner.vue      # OPC UA 扫描器
+│           ├── ChannelMetricsCard.vue# 通道指标卡片
+│           ├── DeviceMetricsCard.vue # 设备指标卡片
+│           ├── HistoryModal.vue      # 历史数据弹窗
+│           ├── HelpDrawer.vue        # 帮助抽屉
+│           ├── CloneDialog.vue       # 克隆对话框
+│           ├── ChangePasswordDialog.vue
+│           ├── PointFormatHelpPanel.vue
+│           └── TargetEditor.vue      # 目标编辑器
+│
+├── docs/                             # 文档（GitHub Pages/Jekyll）
+│   ├── API/                          # API 接口文档（Markdown）
+│   ├── man/                          # 使用手册
+│   ├── img/                          # 文档图片
+│   └── *.md                          # 设计文档、测试报告等
+│
+├── scripts/                          # 部署与安装脚本
+│   ├── preinstall.sh                 # 安装前脚本
+│   ├── postinstall.sh                # 安装后脚本
+│   └── deploy.ps1                    # Windows 部署脚本
+│
+├── logs/                             # 运行时日志输出目录
+├── go.mod / go.sum                   # Go 依赖管理
+├── .goreleaser_linux.yml             # GoReleaser 发布配置
+├── server.crt / server.key           # TLS 证书
+├── README.md / README_CN.md          # 项目说明
+└── spec.md / tasks.md                # 规格与任务文档
+```
+
+---
+
+## API 路由概览（前缀 `/api`）
+
+### 认证（无需 JWT）
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/auth/system-info` | 系统信息 |
+| POST | `/nonce` | 获取 Nonce |
+| POST | `/login` | 登录 |
+| POST | `/logout` | 登出 |
+
+### 业务接口（需 JWT 认证）
+| 分组 | 方法 | 路径示例 | 说明 |
+|------|------|----------|------|
+| 仪表盘 | GET | `/dashboard/summary` | 系统概览 |
+| 系统 | GET/PUT | `/system` | 系统配置 |
+| 系统 | POST | `/system/restart` | 重启 |
+| 系统 | GET | `/system/network/interfaces`, `/routes` | 网络信息 |
+| 通道 | CRUD | `/channels`, `/channels/:id` | 南向通道管理 |
+| 通道 | GET/POST | `/channels/:id/scan`, `/metrics` | 设备扫描、指标 |
+| 设备 | CRUD | `/channels/:id/devices`, `/devices/:id` | 设备管理 |
+| 点位 | CRUD | `/channels/:cid/devices/:did/points` | 点位管理 |
+| 实时值 | GET | `/values/realtime` | 实时数据 |
+| 写点 | POST | `/write` | 下发写命令 |
+| 北向 | GET/POST/DELETE | `/northbound/*` | 北向配置（MQTT/HTTP/OPC UA/SparkplugB） |
+| 边缘计算 | GET/POST/DELETE | `/edge/rules`, `/edge/states`, `/edge/metrics` | 规则管理 |
+| 日志 | GET | `/ws/logs`, `/logs/download` | 日志流与下载 |
+| WebSocket | GET | `/ws/values`, `/ws/logs` | 实时数据/日志推送 |
+
+---
+
+## 数据流
+
+1. **采集**: `Driver.ReadPoints()` → `ChannelManager` → `DataPipeline.Push()`
+2. **管道处理**: `DataPipeline.process()` → 可选 `ShadowIngress` → 串行调用所有 Handler
+3. **Handler 链**:
+   - `storage.SaveValue()` — 持久化到 BoltDB
+   - `EdgeComputeManager` — 规则求值与动作触发
+   - `DeviceStorageManager` — 设备历史记录
+   - `server.BroadcastValue()` — WebSocket 实时推送
+4. **北向上报**: `NorthboundManager` 从管道/南向获取数据，通过 MQTT/HTTP/OPC UA/SparkplugB 上报
+
+## 配置热重载
+
+`ConfigManager.StartWatch()` 定时检测 `conf/` 目录下 YAML 文件变更，通过 `ReloadChan` 通知主程序更新边缘规则、北向配置、设备存储配置等组件。
+
+## 主要依赖
+
+| 依赖 | 用途 |
+|------|------|
+| `gofiber/fiber` | HTTP 框架 |
+| `gofiber/websocket` | WebSocket 支持 |
+| `golang-jwt/jwt` | JWT 认证 |
+| `paho.mqtt.golang` | MQTT 客户端 |
+| `gopcua/opcua` | OPC UA 客户端 |
+| `awcullen/opcua` | OPC UA Server |
+| `simonvetter/modbus` | Modbus 协议 |
+| `expr-lang/expr` | 表达式求值引擎（边缘计算） |
+| `go-ldap/ldap` | LDAP 认证 |
+| `grandcat/zeroconf` | mDNS/DNS-SD 服务发现 |
+| `miekg/dns` | DNS 代理 |
+| `etcd.io/bbolt` | BoltDB 嵌入式存储 |
+| `uber.org/zap` | 结构化日志 |
+
+## 南向协议支持
+
+| 协议 | 驱动路径 | 说明 |
+|------|----------|------|
+| Modbus TCP/RTU | `internal/driver/modbus` | 工业标准通信协议 |
+| OPC UA | `internal/driver/opcua` | 工业自动化统一架构 |
+| BACnet/IP | `internal/driver/bacnet` | 楼宇自动化协议 |
+| Siemens S7 | `internal/driver/s7` | 西门子 PLC 协议 |
+| DL/T 645 | `internal/driver/dlt645` | 中国电表通信协议 |
+| EtherNet/IP | `internal/driver/ethernetip` | 工业以太网协议 |
+| Mitsubishi MC | `internal/driver/mitsubishi` | 三菱 PLC 协议 |
+| Omron FINS | `internal/driver/omron` | 欧姆龙 PLC 协议 |
